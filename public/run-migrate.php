@@ -22,9 +22,11 @@ try {
     echo "Running: php artisan migrate --force...\n\n";
     \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
     $migrateOut = \Illuminate\Support\Facades\Artisan::output();
-    echo $migrateOut;
+    echo $migrateOut . "\n";
 
-    echo "\nRunning: php artisan db:seed (Default Admin & Sample Data)...\n";
+    echo "--- Migration Status ---\n";
+    \Illuminate\Support\Facades\Artisan::call('migrate:status');
+    echo \Illuminate\Support\Facades\Artisan::output() . "\n";
     try {
         \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
         echo \Illuminate\Support\Facades\Artisan::output();
