@@ -131,6 +131,7 @@ class TelegramBotTest extends TestCase
 
         // Mock Telegram reply
         $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
         $mockBot->shouldReceive('sendMessage')
             ->once()
             ->withArgs(function ($chatId, $text) {
@@ -184,6 +185,7 @@ class TelegramBotTest extends TestCase
         ]);
 
         $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
         $mockBot->shouldReceive('sendMessage')->twice()->andReturn(['ok' => true]);
         $this->app->instance(TelegramBotService::class, $mockBot);
 

@@ -302,6 +302,9 @@ class TelegramMessageProcessor
     ): void {
         $userTz = $user->timezone ?: 'Asia/Dhaka';
 
+        // Instant visual feedback on Telegram ("Remi is typing...")
+        $this->botService->sendChatAction($chatId, 'typing');
+
         // 1. Record incoming user message into conversation history
         $inbound = TelegramMessage::create([
             'telegram_identity_id' => $identity->id,
@@ -327,11 +330,11 @@ class TelegramMessageProcessor
             }
         }
 
-        // 3. Fetch recent conversation history (last 10 turns before current message)
+        // 3. Fetch recent conversation history (last 4 turns for low latency)
         $history = TelegramMessage::where('telegram_identity_id', $identity->id)
             ->where('id', '<', $inbound->id)
             ->latest('id')
-            ->limit(10)
+            ->limit(4)
             ->get()
             ->reverse()
             ->map(fn($m) => [

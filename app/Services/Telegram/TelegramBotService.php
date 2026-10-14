@@ -57,6 +57,26 @@ class TelegramBotService
     }
 
     /**
+     * Send chat action (e.g. typing) to indicate bot is working.
+     */
+    public function sendChatAction(string $chatId, string $action = 'typing'): array
+    {
+        if (! $this->isConfigured()) {
+            return ['ok' => false];
+        }
+
+        try {
+            $response = Http::timeout(3)->post($this->endpoint('sendChatAction'), [
+                'chat_id' => $chatId,
+                'action' => $action,
+            ]);
+            return $response->json() ?? ['ok' => false];
+        } catch (\Throwable $e) {
+            return ['ok' => false];
+        }
+    }
+
+    /**
      * Send photo to a chat.
      */
     public function sendPhoto(string $chatId, string $photoPath, string $caption = ''): array
