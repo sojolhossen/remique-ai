@@ -39,13 +39,38 @@ try {
     \Illuminate\Support\Facades\DB::connection()->getPdo();
     echo "✓ DB connection successful to: " . config('database.connections.mysql.database') . "\n";
 
+    // Simulate real request
+    echo "\n--- Testing Real HTTP Request ---\n";
+    $request = \Illuminate\Http\Request::create('/', 'GET');
+    $response = $kernel->handle($request);
+    echo "HTTP Status Code: " . $response->getStatusCode() . "\n";
+    if ($response->getStatusCode() !== 200) {
+        $content = $response->getContent();
+        if (preg_match('/<title>(.*?)<\/title>/is', $content, $m)) {
+            echo "Response Title: " . trim($m[1]) . "\n";
+        }
+        // Extract exception message if present in html
+        if (preg_match('/class="exception_title">(.*?)<\/span>/is', $content, $m)) {
+            echo "Exception: " . trim(strip_tags($m[1])) . "\n";
+        }
+        if (preg_match('/class="exception_message">(.*?)<\/span>/is', $content, $m)) {
+            echo "Message: " . trim(strip_tags($m[1])) . "\n";
+        }
+    } else {
+        echo "✓ Homepage returned HTTP 200 OK!\n";
+    }
+
 } catch (\Throwable $e) {
-    echo "❌ ERROR: " . $e->getMessage() . "\n";
-    echo "In " . $e->getFile() . " on line " . $e->getLine() . "\n";
+    echo "❌ FATAL EXCEPTION: " . $e->getMessage() . "\n";
+    echo "File: " . $e->getFile() . " Line: " . $e->getLine() . "\n";
+    echo "\nTrace:\n" . $e->getTraceAsString() . "\n";
 }
 
 if (file_exists($base . '/storage/logs/laravel.log')) {
-    echo "\n--- Last 500 characters of laravel.log ---\n";
-    $content = file_get_contents($base . '/storage/logs/laravel.log');
-    echo substr($content, -1500);
+    echo "\n--- Last Log Entry ---\n";
+    $lines = file($base . '/storage/logs/laravel.log');
+    $lastLines = array_slice($lines, -15);
+    foreach ($lastLines as $l) {
+        echo trim($l) . "\n";
+    }
 }
