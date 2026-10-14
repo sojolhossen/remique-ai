@@ -6,7 +6,7 @@ use App\Http\Requests\Reminder\AiInterpretRequest;
 use App\Http\Requests\Reminder\StoreReminderRequest;
 use App\Http\Requests\Reminder\UpdateReminderRequest;
 use App\Models\Reminder;
-use App\Services\AI\NvidiaNimService;
+use App\Services\AI\Contracts\AiServiceInterface;
 use App\Services\ReminderService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +19,7 @@ class ReminderController extends Controller
 {
     public function __construct(
         protected ReminderService $reminderService,
-        protected NvidiaNimService $aiService
+        protected AiServiceInterface $aiService
     ) {}
 
     /**

@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class NvidiaNimService
+use App\Models\SystemSetting;
+use App\Services\AI\Contracts\AiServiceInterface;
+
+class NvidiaNimService implements AiServiceInterface
 {
     protected string $apiKey;
     protected string $baseUrl;
@@ -19,11 +22,13 @@ class NvidiaNimService
     protected int $timeout;
     protected int $maxRetries;
 
-    public function __construct()
-    {
-        $this->apiKey = (string) config('nvidia.api_key', '');
+    public function __construct(
+        ?string $apiKey = null,
+        ?string $model = null
+    ) {
+        $this->apiKey = (string) ($apiKey ?? SystemSetting::get('ai_nvidia_api_key', config('nvidia.api_key', '')));
         $this->baseUrl = rtrim((string) config('nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
-        $this->model = (string) config('nvidia.model', 'openai/gpt-oss-20b');
+        $this->model = (string) ($model ?? SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'openai/gpt-oss-20b')));
         $this->timeout = (int) config('nvidia.timeout', 30);
         $this->maxRetries = (int) config('nvidia.max_retries', 2);
     }
@@ -34,6 +39,82 @@ class NvidiaNimService
     public function isConfigured(): bool
     {
         return ! empty($this->apiKey) && $this->apiKey !== 'YOUR_ROTATED_API_KEY';
+    }
+
+    public function getProviderName(): string
+    {
+        return 'nvidia_nim';
+    }
+
+    public function getModelName(): string
+    {
+        return $this->model;
+    }
+
+    /**
+     * Test connectivity to NVIDIA NIM with a lightweight ping.
+     */
+    public function testConnection(?string $model = null): array
+    {
+        $targetModel = $model ?: $this->model;
+        $startTime = hrtime(true);
+
+        if (! $this->isConfigured()) {
+            return [
+                'success' => false,
+                'latency_ms' => 0,
+                'message' => 'NVIDIA NIM API key is not configured.',
+                'model' => $targetModel,
+                'provider' => 'nvidia_nim',
+            ];
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+            ])
+            ->timeout(12)
+            ->post("{$this->baseUrl}/chat/completions", [
+                'model' => $targetModel,
+                'messages' => [
+                    ['role' => 'user', 'content' => 'Ping'],
+                ],
+                'max_tokens' => 5,
+            ]);
+
+            $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'latency_ms' => $latencyMs,
+                    'message' => "Model {$targetModel} responded successfully ({$latencyMs} ms).",
+                    'model' => $targetModel,
+                    'provider' => 'nvidia_nim',
+                ];
+            }
+
+            $error = $response->json()['error']['message'] ?? 'HTTP ' . $response->status();
+
+            return [
+                'success' => false,
+                'latency_ms' => $latencyMs,
+                'message' => "Failed ({$response->status()}): {$error}",
+                'model' => $targetModel,
+                'provider' => 'nvidia_nim',
+            ];
+        } catch (Throwable $e) {
+            $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
+            return [
+                'success' => false,
+                'latency_ms' => $latencyMs,
+                'message' => 'Connection failed: ' . $e->getMessage(),
+                'model' => $targetModel,
+                'provider' => 'nvidia_nim',
+            ];
+        }
     }
 
     /**

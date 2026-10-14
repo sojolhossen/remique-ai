@@ -6,7 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Reminder;
 use App\Models\WhatsAppIdentity;
 use App\Models\WhatsAppMessage;
-use App\Services\AI\NvidiaNimService;
+use App\Services\AI\Contracts\AiServiceInterface;
 use App\Services\Vault\VaultService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +16,7 @@ class WhatsAppMessageProcessor
 {
     public function __construct(
         protected WhatsAppCloudApiService $apiService,
-        protected NvidiaNimService $aiService,
+        protected AiServiceInterface $aiService,
         protected VaultService $vaultService
     ) {}
 

@@ -8,7 +8,7 @@ use App\Models\TelegramIdentity;
 use App\Models\TelegramMessage;
 use App\Models\User;
 use App\Models\VaultFile;
-use App\Services\AI\NvidiaNimService;
+use App\Services\AI\Contracts\AiServiceInterface;
 use App\Services\ReminderService;
 use App\Services\Vault\VaultService;
 use Carbon\Carbon;
@@ -18,7 +18,7 @@ class TelegramMessageProcessor
 {
     public function __construct(
         protected TelegramBotService $botService,
-        protected NvidiaNimService $aiService,
+        protected AiServiceInterface $aiService,
         protected ReminderService $reminderService,
         protected VaultService $vaultService
     ) {}

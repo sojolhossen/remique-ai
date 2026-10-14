@@ -108,8 +108,10 @@ Route::middleware(['auth', 'super_admin'])->prefix('admin')->name('admin.')->gro
     Route::get('/vault', [\App\Http\Controllers\Admin\VaultOversightController::class, 'index'])->name('vault.index');
     Route::delete('/vault/{file}', [\App\Http\Controllers\Admin\VaultOversightController::class, 'deleteFile'])->name('vault.delete-file');
 
-    // AI Engine (NVIDIA NIM) Settings & Playground
+    // AI Engine (Gemini & NVIDIA NIM) Settings, Switching & Playground
     Route::get('/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'index'])->name('ai.index');
+    Route::post('/ai/settings', [\App\Http\Controllers\Admin\AiSettingsController::class, 'updateSettings'])->name('ai.update-settings');
+    Route::post('/ai/test-model', [\App\Http\Controllers\Admin\AiSettingsController::class, 'testModel'])->name('ai.test-model');
     Route::post('/ai/playground', [\App\Http\Controllers\Admin\AiSettingsController::class, 'testPlayground'])->name('ai.test-playground');
 
     // System Environment & Maintenance
