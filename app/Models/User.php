@@ -22,6 +22,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
         'status',
         'preferred_language',
         'timezone',
@@ -33,6 +34,7 @@ class User extends Authenticatable
      * Default model attribute values.
      */
     protected $attributes = [
+        'role' => 'customer',
         'status' => 'active',
         'preferred_language' => 'en',
         'timezone' => 'UTC',
@@ -80,10 +82,50 @@ class User extends Authenticatable
     }
 
     /**
+     * Get WhatsApp identities linked to this user.
+     */
+    public function whatsappIdentities(): HasMany
+    {
+        return $this->hasMany(WhatsAppIdentity::class);
+    }
+
+    /**
+     * Get the active or verified WhatsApp identity.
+     */
+    public function primaryWhatsAppIdentity()
+    {
+        return $this->hasOne(WhatsAppIdentity::class)->whereIn('status', ['active', 'verified'])->latestOfMany();
+    }
+
+    /**
+     * Get vault files owned by the user.
+     */
+    public function vaultFiles(): HasMany
+    {
+        return $this->hasMany(VaultFile::class);
+    }
+
+    /**
      * Check if user account is active.
      */
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    /**
+     * Check if user has super admin privileges.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'super_admin';
+    }
+
+    /**
+     * Check if user is a standard customer.
+     */
+    public function isCustomer(): bool
+    {
+        return $this->role === 'customer';
     }
 }

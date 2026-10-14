@@ -174,7 +174,10 @@ class NvidiaNimService
                 errorMessage: null,
                 errorCategory: null,
                 durationMs: $durationMs,
-                totalTokens: $tokens['total_tokens'] ?? null
+                totalTokens: $tokens['total_tokens'] ?? null,
+                searchQuery: $parsedData['search_query'] ?? null,
+                fileType: $parsedData['file_type'] ?? null,
+                targetReminderIdentifier: $parsedData['target_reminder_identifier'] ?? null
             );
 
         } catch (RequestException $e) {
@@ -226,8 +229,9 @@ class NvidiaNimService
         $dayOfWeek = $nowInUserTz->format('l');
 
         return <<<PROMPT
-You are Remi AI, a precise, intelligent natural language reminder extraction engine.
-Your mission is to parse the user's reminder request and output ONLY a strictly valid JSON object.
+You are Remi AI, the intelligent conversational assistant for Remique.
+You manage natural-language reminders, personal memory files, and schedules in Bengali, Banglish, and English.
+You must parse the user's intent and output ONLY a strictly valid JSON object.
 
 CONTEXT INFORMATION:
 - Current Date: {$currentDate}
@@ -235,39 +239,56 @@ CONTEXT INFORMATION:
 - Day of Week: {$dayOfWeek}
 - User Timezone: {$userTimezone}
 
-SUPPORTED LANGUAGES:
-- Bengali (বাংলা): e.g. "আগামীকাল সকাল ৯টায় আমাকে ডাক্তার দেখানোর কথা মনে করিয়ে দিও।"
-- Banglish (Bengali written in Latin letters): e.g. "kal shokal 9 tay amake doctor er kotha mone koriye dio."
-- English: e.g. "Remind me tomorrow at 9 AM to call the client."
+SUPPORTED INTENTS:
+1. "create_reminder":
+   - "আগামীকাল সকাল ৯টায় ক্লায়েন্টকে কল করার কথা মনে করিয়ে দিও।"
+   - "Kal shokal 8 tay meeting ache, remind korio."
+   - "Remind me to pay the internet bill on the 5th of every month."
+2. "list_reminders":
+   - "আজকের সব reminder দেখাও।"
+   - "amar shob reminder dekhao"
+   - "Show all my reminders for today."
+3. "reschedule_reminder":
+   - "আগামীকালের reminder-টা রাত ৮টায় করে দাও।"
+   - "Kal er reminder ta rat 8 tay shift koro."
+   - "Reschedule tomorrow's reminder to 8 PM."
+4. "cancel_reminder":
+   - "ওই reminder-টা বাতিল করো।"
+   - "oi reminder ta cancel koro"
+   - "Cancel that reminder."
+5. "complete_reminder":
+   - "meeting reminder-টা complete করে দাও।"
+   - "Done with that reminder."
+6. "retrieve_file":
+   - "গত সপ্তাহে পাঠানো X89 earbuds-এর ছবিটা আমাকে দাও।"
+   - "amar PDF invoice-ta khuje dao"
+   - "Find my passport PDF / photo."
+7. "unknown":
+   - Any general greeting or unparseable input.
 
-DATE RESOLUTION RULES:
+DATE & TIME RESOLUTION RULES:
 - "today", "আজ", "ajke" -> {$currentDate}
-- "tomorrow", "আগামীকাল", "kal", "shokal" -> resolve relative to {$currentDate}
+- "tomorrow", "আগামীকাল", "kal" -> mathematically resolve relative to {$currentDate}
 - "day after tomorrow", "পরশু", "porshu" -> resolve relative to {$currentDate}
-- "next Friday", "পরের শুক্রবার", "agami shukrobar" -> resolve to the upcoming Friday date
-- Resolve any relative day/date mathematically from the Current Date ({$currentDate}).
-- Output format for date MUST be "YYYY-MM-DD" or null if not provided.
-
-TIME RESOLUTION RULES:
-- "9 AM", "সকাল ৯টা", "shokal 9 ta" -> "09:00:00"
-- "2 PM", "দুপুর ২টা", "dupur 2 ta" -> "14:00:00"
-- "8:30 PM", "রাত ৮:৩০", "rat 8:30" -> "20:30:00"
-- "evening", "সন্ধ্যা", "shondha" without explicit hour -> "18:00:00"
-- "morning", "সকাল", "shokal" without explicit hour -> "09:00:00"
-- "afternoon", "দুপুর", "dupur" without explicit hour -> "14:00:00"
-- "night", "রাত", "rat" without explicit hour -> "21:00:00"
-- Output format for time MUST be "HH:MM:SS" (24-hour clock) or null if not provided.
+- "5th of every month" -> recurrence: "monthly", date: next 5th day of month
+- "9 AM", "সকাল ৯টা" -> "09:00:00"
+- "8 PM", "রাত ৮টা", "rat 8 ta" -> "20:00:00"
+- Date format: "YYYY-MM-DD" or null.
+- Time format: "HH:MM:SS" (24-hour) or null.
 
 CRITICAL JSON SCHEMA:
 You MUST respond with ONLY a single JSON object with these exact keys:
 {
-  "intent": "create_reminder",
-  "title": "Clean, concise reminder title without polite filler (e.g. 'ডাক্তার দেখানো', 'Call the client', 'Pay electricity bill')",
+  "intent": "create_reminder" | "list_reminders" | "reschedule_reminder" | "cancel_reminder" | "complete_reminder" | "retrieve_file" | "unknown",
+  "title": "Clean concise reminder title or null",
   "description": null,
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM:SS",
+  "date": "YYYY-MM-DD" | null,
+  "time": "HH:MM:SS" | null,
   "priority": "low" | "medium" | "high" | "urgent",
   "recurrence": "none" | "daily" | "weekly" | "monthly" | "yearly",
+  "search_query": "file topic / product name to search in vault or null",
+  "file_type": "image" | "pdf" | "document" | null,
+  "target_reminder_identifier": "which reminder was referenced (e.g. 'tomorrow', 'meeting', 'previous') or null",
   "detected_language": "bengali" | "banglish" | "english" | "other",
   "has_missing_info": false,
   "missing_fields": [],
@@ -275,13 +296,10 @@ You MUST respond with ONLY a single JSON object with these exact keys:
   "confidence": 0.95
 }
 
-MISSING INFORMATION HANDLING:
-- If the user did not specify a date or time, set "has_missing_info": true.
-- Add the missing item to "missing_fields" (e.g. ["time"] or ["date", "time"]).
-- Provide a polite "clarification_question" in the user's detected language asking for the missing info.
-- If the reminder text itself lacks any meaningful action/title, mark "has_missing_info": true with missing_fields: ["title"].
-
-DO NOT include markdown fences, comments, or any extra text before or after the JSON.
+MISSING INFORMATION & CLARIFICATION:
+- If creating a reminder without explicit date or time, set "has_missing_info": true, add to "missing_fields", and generate a polite "clarification_question" in the user's detected language.
+- DO NOT invent dates or times. If ambiguous, ask for clarification.
+- DO NOT wrap in markdown fences. Output raw JSON only.
 PROMPT;
     }
 
@@ -310,7 +328,12 @@ PROMPT;
             }
         }
 
-        if (! is_array($decoded) || empty($decoded['title'])) {
+        if (! is_array($decoded) || empty($decoded['intent'])) {
+            return null;
+        }
+
+        // For create_reminder, title is required unless missing info is flagged
+        if ($decoded['intent'] === 'create_reminder' && empty($decoded['title']) && empty($decoded['has_missing_info'])) {
             return null;
         }
 

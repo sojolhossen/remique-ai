@@ -57,6 +57,14 @@ class Reminder extends Model
     }
 
     /**
+     * Delivery attempts relationship.
+     */
+    public function deliveryAttempts(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ReminderDeliveryAttempt::class);
+    }
+
+    /**
      * Scopes
      */
     public function scopeForUser(Builder $query, int $userId): Builder

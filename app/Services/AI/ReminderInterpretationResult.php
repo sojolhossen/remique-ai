@@ -22,6 +22,9 @@ class ReminderInterpretationResult
         public ?string $errorCategory = null,
         public int $durationMs = 0,
         public ?int $totalTokens = null,
+        public ?string $searchQuery = null,
+        public ?string $fileType = null,
+        public ?string $targetReminderIdentifier = null,
     ) {}
 
     public function toArray(): array
@@ -44,6 +47,9 @@ class ReminderInterpretationResult
             'error_category' => $this->errorCategory,
             'duration_ms' => $this->durationMs,
             'total_tokens' => $this->totalTokens,
+            'search_query' => $this->searchQuery,
+            'file_type' => $this->fileType,
+            'target_reminder_identifier' => $this->targetReminderIdentifier,
         ];
     }
 }

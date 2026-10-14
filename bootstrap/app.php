@@ -11,7 +11,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->validateCsrfTokens(except: [
+            'whatsapp/webhook',
+            'api/whatsapp/webhook',
+        ]);
+
+        $middleware->alias([
+            'super_admin' => \App\Http\Middleware\EnsureUserIsSuperAdmin::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

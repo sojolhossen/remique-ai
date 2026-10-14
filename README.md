@@ -233,13 +233,146 @@ php artisan view:cache
 
 ---
 
-## 9. Prompt 2 Handoff Checklist
+## 9. Master Prompt 2 Completed Implementation
 
-The following modules are cleanly architected for implementation in **Prompt 2**:
-- [ ] Official Meta WhatsApp Business Platform Cloud API integration.
-- [ ] Customer WhatsApp number verification and opt-in consent workflow.
-- [ ] Automated scheduled reminder delivery via WhatsApp and cron.
-- [ ] Meta approved WhatsApp template management.
-- [ ] Delivery retry engine, failure tracking, and delivery receipts webhook.
-- [ ] SaaS subscription tiers, customer entitlements, and payment gateways.
-- [ ] Complete Super Admin dashboard, tenant management, and system-wide usage metering.
+### 9.1 Database Schema Additions (Prompt 2)
+
+#### `whatsapp_identities` Table
+- Stores authorized, normalized E.164 phone numbers for customers.
+- Statuses: `pending_verification`, `active`, `suspended`, `blocked`, `revoked`.
+- Tracking: `verification_token`, `verification_expires_at`, `verified_at`, `consent_recorded_at`, `last_inbound_at`.
+- Strict manual override tracking: `verified_by_user_id`, `manual_verification_reason`.
+
+#### `whatsapp_messages` Table
+- Full inbound and outbound message log with provider event deduplication via unique `wamid`.
+- Directions: `inbound`, `outbound`.
+- Statuses: `received`, `accepted`, `sent`, `delivered`, `read`, `failed`, `unknown`.
+- Direction and timestamp indexing.
+
+#### `reminder_delivery_attempts` Table
+- Atomic claim and execution records separating reminder definition from delivery attempts.
+- Unique `idempotency_key` (e.g. `reminder_{id}_{timestamp}`) preventing duplicate deliveries.
+- Statuses: `pending`, `processing`, `sent`, `delivered`, `read`, `failed`, `exhausted`.
+- Tracks `is_template` (whether dispatched as free-form within 24h window or approved template outside window).
+- Bounded retry tracking with backoff and crash recovery.
+
+#### `vault_files` Table
+- Private Personal Memory Vault for JPEG, PNG, WEBP, and PDF documents.
+- Opaque UUID-based storage keys (e.g. `vault/{user_id}/{uuid}.{ext}`).
+- Metadata: `original_filename`, `mime_type`, `file_size`, `checksum_sha256`, `caption`, `category`, `tags`, `search_text`.
+- Strict owner scoping ensuring user isolation.
+
+#### `audit_logs` Table
+- Immutable, append-only security and administrative audit log.
+- Fields: `user_id` (actor), `action`, `target_type`, `target_id`, `reason`, `ip_address`, `metadata` (sanitized with sensitive keys redacted), `created_at`.
+
+#### `whatsapp_templates` Table
+- Registry of Meta-approved WhatsApp utility and reminder templates (e.g. `remi_reminder_alert`).
+
+---
+
+### 9.2 Official Meta WhatsApp Cloud API Setup
+
+#### Step 1: Create Meta Developer App & WhatsApp Product
+1. Go to [developers.facebook.com](https://developers.facebook.com/) and create a Business App.
+2. Add the **WhatsApp** product.
+3. In **API Setup**, retrieve your:
+   - **Phone Number ID**
+   - **WhatsApp Business Account ID (WABA)**
+   - **Temporary or Permanent System User Access Token**
+
+#### Step 2: Configure Environment Variables
+Add the following to your `.env`:
+```env
+WHATSAPP_CLOUD_API_BASE_URL=https://graph.facebook.com
+WHATSAPP_CLOUD_API_VERSION=v21.0
+WHATSAPP_PHONE_NUMBER_ID=your_meta_phone_number_id
+WHATSAPP_BUSINESS_ACCOUNT_ID=your_meta_waba_id
+WHATSAPP_ACCESS_TOKEN=your_meta_system_user_access_token
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=your_secure_random_verify_token
+WHATSAPP_APP_SECRET=your_meta_app_secret
+WHATSAPP_API_TIMEOUT=15
+WHATSAPP_RETRY_LIMIT=3
+WHATSAPP_SEND_ONBOARDING_REPLIES=true
+WHATSAPP_DEFAULT_REMINDER_TEMPLATE=remi_reminder_alert
+WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE=en_US
+WHATSAPP_MAX_FILE_SIZE_MB=15
+```
+
+#### Step 3: Meta Webhook Subscription
+1. Under **WhatsApp > Configuration**, click **Edit** for the Webhook:
+   - **Callback URL:** `https://your-domain.com/whatsapp/webhook`
+   - **Verify Token:** The value of `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
+2. Subscribe to Webhook fields:
+   - `messages` (inbound messages and media)
+   - `message_deliveries` / `statuses` (delivery receipts: sent, delivered, read, failed)
+3. Signature verification: All incoming POST webhooks are authenticated via HMAC-SHA256 using `WHATSAPP_APP_SECRET` and the `X-Hub-Signature-256` header.
+
+---
+
+### 9.3 24-Hour Customer Service Window & Template Compliance
+Meta messaging policy restricts free-form customer messaging:
+1. **Inside 24-Hour Window:** When the customer has texted Remique within the last 24 hours (`last_inbound_at >= now() - 24 hours`), reminders are sent as free-form conversational alerts.
+2. **Outside 24-Hour Window:** If more than 24 hours have elapsed since the user's last inbound message, Remique automatically dispatches an approved utility template (`remi_reminder_alert`) passing the user's name, title, and formatted due date.
+
+---
+
+### 9.4 Personal Memory Vault
+- Customers can send images (JPEG, PNG, WEBP) or PDF documents (up to 15MB) via WhatsApp.
+- Remique downloads the media server-side via official Meta endpoints, computes SHA-256 checksums, and stores the file under an opaque key in `storage/app/private/vault/{user_id}/`.
+- Customers can retrieve stored files at any time via WhatsApp using natural language:
+  - *“গত সপ্তাহে পাঠানো X89 earbuds-এর ছবিটা আমাকে দাও।”*
+  - *“আমার PDF invoice-টা খুঁজে দাও।”*
+- If multiple files match, Remique returns an interactive disambiguation list.
+
+---
+
+### 9.5 Enterprise Super Admin Dashboard
+Accessible at `/admin` for users with `role = 'super_admin'`:
+- **Overview Dashboard (`/admin`):** Real-time operational metrics, WhatsApp delivery success rate (30-day window), failed delivery queue, and live telemetry.
+- **Customer Management (`/admin/customers`):** Directory, search, WhatsApp number linking, OTP generation, account status toggles (`active`, `suspended`, `blocked`), and manual verification overrides with required audit reasons.
+- **WhatsApp Cloud API (`/admin/whatsapp`):** Masked credential audit, real Meta Graph API connectivity testing, deduplicated message stream, and failed attempt re-queuing.
+- **Reminder Oversight (`/admin/reminders`):** System-wide scheduled reminders, delivery attempt history, and audit-backed rescheduling/cancellation.
+- **Memory Vault Oversight (`/admin/vault`):** Global storage footprint, customer quota inspection, and file metadata management with zero-knowledge private content protections.
+- **AI Settings (`/admin/ai`):** NVIDIA NIM model status, latency metrics, error category breakdown, and multilingual intent playground.
+- **System Settings (`/admin/system`):** Runtime host info, cron command generator, and cache flushing.
+- **Security & Audit Logs (`/admin/audit-logs`):** Immutable append-only audit trail of all high-impact actions.
+
+---
+
+### 9.6 Automated Test Results (Master Prompt 2)
+The test suite contains **63 automated tests with 181 assertions**, all passing:
+- `AuthTest` (7 tests) — Registration, login, password checks, throttling, logout.
+- `CrossUserAuthorizationTest` (6 tests) — Cross-user reminder and file isolation.
+- `ReminderCrudTest` (8 tests) — Full reminder lifecycle, timezone conversions, validations.
+- `NvidiaNimAiTest` (9 tests) — Bengali, Banglish, and English parsing, error handling, rate limits.
+- `ScheduledDeliveryEngineTest` (4 tests) — Atomic claiming, 24h window compliance, template fallback, recurrence rolling, idempotency.
+- `WhatsAppWebhookTest` (7 tests) — GET handshake, HMAC-SHA256 verification, OTP linking, duplicate deduplication, unknown sender rejection.
+- `MemoryVaultTest` (5 tests) — Media ingestion, MIME validation, topic search, cross-user privacy.
+- `SuperAdminDashboardTest` (8 tests) — Role-based access control, customer management, manual overrides, reminder rescheduling, and all admin module screen rendering.
+
+Run test suite:
+```bash
+php artisan test
+```
+
+---
+
+## 10. Master Prompt 3 Handoff & Recommended Next Steps
+
+Master Prompt 3 will focus on:
+1. **Production Security Hardening:**
+   - Content Security Policy (CSP) and HTTP security headers (`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`).
+   - Rate limiting on webhook ingress and public endpoints.
+   - Private storage encryption at rest.
+2. **Performance & Shared-Hosting Optimization:**
+   - Query indexing and slow query optimization for high-volume message tables.
+   - Bounded batch sizes for cPanel cron runs.
+3. **Accessibility (WCAG 2.2 AA) & SEO:**
+   - Aria attributes, keyboard navigation audits, semantic headings.
+   - Public landing page metadata and OpenGraph tags.
+4. **Backup, Disaster Recovery & Automated Rollback:**
+   - Database and vault storage backup scripts for shared-hosting environments.
+   - Rollback scripts for database migrations.
+5. **Final Production Readiness Review & Launch Sign-off.**
+

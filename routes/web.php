@@ -59,3 +59,57 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::put('/settings/password', [SettingsController::class, 'updatePassword'])->name('settings.password');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Official Meta WhatsApp Cloud API Webhook
+|--------------------------------------------------------------------------
+*/
+Route::get('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhookController::class, 'verify'])->name('whatsapp.webhook.verify');
+Route::post('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhookController::class, 'handle'])->name('whatsapp.webhook.handle');
+
+/*
+|--------------------------------------------------------------------------
+| Enterprise Super Admin Dashboard Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'super_admin'])->prefix('admin')->name('admin.')->group(function () {
+    // Overview
+    Route::get('/', [\App\Http\Controllers\Admin\AdminDashboardController::class, 'index'])->name('dashboard');
+
+    // Customer Management & Authorized Numbers
+    Route::get('/customers', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'index'])->name('customers.index');
+    Route::get('/customers/create', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'create'])->name('customers.create');
+    Route::post('/customers', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'store'])->name('customers.store');
+    Route::get('/customers/{customer}', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'show'])->name('customers.show');
+    Route::post('/customers/{customer}/link-whatsapp', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'linkWhatsApp'])->name('customers.link-whatsapp');
+    Route::post('/customers/{customer}/status', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'updateStatus'])->name('customers.status');
+    Route::post('/identities/{identity}/manual-verify', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'manualVerify'])->name('customers.manual-verify');
+    Route::post('/identities/{identity}/revoke', [\App\Http\Controllers\Admin\CustomerManagementController::class, 'revokeIdentity'])->name('customers.revoke-identity');
+
+    // WhatsApp Cloud API Management
+    Route::get('/whatsapp', [\App\Http\Controllers\Admin\WhatsAppManagementController::class, 'index'])->name('whatsapp.index');
+    Route::post('/whatsapp/test-connectivity', [\App\Http\Controllers\Admin\WhatsAppManagementController::class, 'testConnectivity'])->name('whatsapp.test-connectivity');
+    Route::post('/whatsapp/retry/{attempt}', [\App\Http\Controllers\Admin\WhatsAppManagementController::class, 'retryDelivery'])->name('whatsapp.retry');
+
+    // Reminder Oversight & Queue
+    Route::get('/reminders', [\App\Http\Controllers\Admin\ReminderOversightController::class, 'index'])->name('reminders.index');
+    Route::post('/reminders/{reminder}/reschedule', [\App\Http\Controllers\Admin\ReminderOversightController::class, 'reschedule'])->name('reminders.reschedule');
+    Route::post('/reminders/{reminder}/cancel', [\App\Http\Controllers\Admin\ReminderOversightController::class, 'cancel'])->name('reminders.cancel');
+
+    // Memory Vault Governance
+    Route::get('/vault', [\App\Http\Controllers\Admin\VaultOversightController::class, 'index'])->name('vault.index');
+    Route::delete('/vault/{file}', [\App\Http\Controllers\Admin\VaultOversightController::class, 'deleteFile'])->name('vault.delete-file');
+
+    // AI Engine (NVIDIA NIM) Settings & Playground
+    Route::get('/ai', [\App\Http\Controllers\Admin\AiSettingsController::class, 'index'])->name('ai.index');
+    Route::post('/ai/playground', [\App\Http\Controllers\Admin\AiSettingsController::class, 'testPlayground'])->name('ai.test-playground');
+
+    // System Environment & Maintenance
+    Route::get('/system', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'index'])->name('system.index');
+    Route::post('/system/clear-cache', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'clearCache'])->name('system.clear-cache');
+
+    // Security & Audit Logs
+    Route::get('/audit-logs', [\App\Http\Controllers\Admin\AuditLogController::class, 'index'])->name('audit.index');
+});
+
