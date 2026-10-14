@@ -338,7 +338,7 @@ class TelegramMessageProcessor
                 $match = $results->first();
                 $path = $this->vaultService->getFilePathForUser($user, $match->id);
                 if ($path && file_exists($path)) {
-                    $caption = $interpretation->conversationalReply ?: "📄 {$match->original_filename}";
+                    $caption = "📄 <b>{$match->original_filename}</b>\n\nআপনার মেমোরি ভল্ট থেকে ফাইলটি খুঁজে পাওয়া গেছে!";
                     if ($match->isPdf()) {
                         $this->botService->sendDocument($chatId, $path, $caption);
                     } else {
@@ -350,13 +350,19 @@ class TelegramMessageProcessor
                         'chat_id' => $chatId,
                         'direction' => 'outbound',
                         'role' => 'assistant',
-                        'body' => "[File sent: {$match->original_filename}] {$caption}",
+                        'body' => "[File sent: {$match->original_filename}]",
                     ]);
                     return;
                 }
             }
 
-            $reply = $interpretation->conversationalReply ?: "আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি।";
+            $totalFiles = $user->vaultFiles()->count();
+            if ($totalFiles === 0) {
+                $reply = "❌ আপনার মেমোরি ভল্টে এই মুহূর্তে কোনো ফাইল বা ডকুমেন্টস সেভ করা নেই।\n\nআপনি এখানে যেকোনো সময় ছবি বা PDF পাঠালে আমি তা আপনার ভল্টে সুরক্ষিতভাবে গুছিয়ে রাখব।";
+            } else {
+                $reply = "🔍 দুঃখিত, আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি। অনুগ্রহ করে ফাইলের সঠিক বিষয় বা নাম উল্লেখ করুন।";
+            }
+
             $this->sendReply($identity, $chatId, $reply);
             return;
         }

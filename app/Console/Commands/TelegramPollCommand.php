@@ -45,8 +45,19 @@ class TelegramPollCommand extends Command
 
         $offset = 0;
         $runOnce = (bool) $this->option('once');
+        $lastReminderCheck = 0;
 
         while (true) {
+            // Check and deliver due reminders in real-time (every 5 seconds, zero delay)
+            if (time() - $lastReminderCheck >= 5) {
+                $lastReminderCheck = time();
+                try {
+                    \Illuminate\Support\Facades\Artisan::call('remi:send-due-reminders', ['--limit' => 20]);
+                } catch (\Throwable $e) {
+                    // Suppress transient scheduler errors
+                }
+            }
+
             $updates = $botService->getUpdates($offset, limit: 10, timeout: 5);
 
             foreach ($updates as $update) {
