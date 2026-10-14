@@ -18,6 +18,7 @@ class UpdateSettingsRequest extends FormRequest
             'timezone' => ['required', 'string', 'timezone:all'],
             'preferred_language' => ['required', 'string', 'in:en,bn'],
             'theme' => ['required', 'string', 'in:light,dark,system'],
+            'preferred_channel' => ['nullable', 'string', 'in:whatsapp,telegram,all'],
             'notification_email' => ['nullable', 'boolean'],
             'notification_sound' => ['nullable', 'boolean'],
         ];

@@ -27,6 +27,7 @@ class User extends Authenticatable
         'preferred_language',
         'timezone',
         'theme',
+        'preferred_channel',
         'notification_preferences',
     ];
 
@@ -39,6 +40,7 @@ class User extends Authenticatable
         'preferred_language' => 'en',
         'timezone' => 'UTC',
         'theme' => 'light',
+        'preferred_channel' => 'all',
     ];
 
     /**
@@ -95,6 +97,22 @@ class User extends Authenticatable
     public function primaryWhatsAppIdentity()
     {
         return $this->hasOne(WhatsAppIdentity::class)->whereIn('status', ['active', 'verified'])->latestOfMany();
+    }
+
+    /**
+     * Get Telegram identities linked to this user.
+     */
+    public function telegramIdentities(): HasMany
+    {
+        return $this->hasMany(TelegramIdentity::class);
+    }
+
+    /**
+     * Get the active or verified Telegram identity.
+     */
+    public function primaryTelegramIdentity()
+    {
+        return $this->hasOne(TelegramIdentity::class)->where('status', 'active')->latestOfMany();
     }
 
     /**

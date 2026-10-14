@@ -34,6 +34,7 @@ class UserFactory extends Factory
             'preferred_language' => 'en',
             'timezone' => 'UTC',
             'theme' => 'light',
+            'preferred_channel' => 'all',
             'notification_preferences' => [
                 'email' => true,
                 'sound' => true,

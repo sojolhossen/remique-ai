@@ -70,6 +70,13 @@ Route::post('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhook
 
 /*
 |--------------------------------------------------------------------------
+| Telegram Bot API Webhook
+|--------------------------------------------------------------------------
+*/
+Route::post('/telegram/webhook', [\App\Http\Controllers\TelegramWebhookController::class, 'handle'])->middleware('throttle:120,1')->name('telegram.webhook');
+
+/*
+|--------------------------------------------------------------------------
 | Enterprise Super Admin Dashboard Routes
 |--------------------------------------------------------------------------
 */

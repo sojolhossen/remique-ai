@@ -71,7 +71,39 @@ WHATSAPP_ACCESS_TOKEN=YOUR_SYSTEM_USER_PERMANENT_TOKEN
 WHATSAPP_WEBHOOK_VERIFY_TOKEN=YOUR_RANDOM_WEBHOOK_VERIFY_STRING
 WHATSAPP_APP_SECRET=YOUR_META_APP_SECRET
 WHATSAPP_MAX_FILE_SIZE_MB=15
+
+# Telegram Bot API Configuration (Multi-Channel Reminders)
+TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN_FROM_BOTFATHER
+TELEGRAM_BOT_USERNAME=RemiqueAiBot
+TELEGRAM_WEBHOOK_SECRET=YOUR_RANDOM_TELEGRAM_SECRET_TOKEN
+TELEGRAM_API_BASE_URL=https://api.telegram.org
+TELEGRAM_TIMEOUT=15
 ```
+
+---
+
+## 2.1 Telegram Bot Setup & Webhook Registration
+
+Remique provides full multi-channel reminder automation via Telegram alongside WhatsApp. Users can connect their Telegram account via a 1-click deep link or verification token, manage reminders in Bengali, Banglish, or English, upload documents/photos to their private vault, and receive automated reminders.
+
+### Step 1: Create Your Bot with BotFather
+1. Open Telegram and search for `@BotFather`.
+2. Send `/newbot`, enter your bot display name (e.g. `Remique Assistant`), and set a username ending in `bot` (e.g. `RemiqueAiBot`).
+3. Copy the HTTP API token provided by BotFather and paste it into `.env` as `TELEGRAM_BOT_TOKEN`.
+4. Set `TELEGRAM_BOT_USERNAME=YourBotUsername` and generate a secret token for `TELEGRAM_WEBHOOK_SECRET`.
+
+### Step 2: Register Telegram Webhook
+Run the following cURL command or visit this URL in your browser:
+```bash
+curl -F "url=https://your-domain.com/telegram/webhook" \
+     -F "secret_token=YOUR_RANDOM_TELEGRAM_SECRET_TOKEN" \
+     https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook
+```
+Expected response:
+```json
+{"ok": true, "result": true, "description": "Webhook was set"}
+```
+
 
 ---
 

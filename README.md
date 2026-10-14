@@ -1,6 +1,6 @@
-# Remi AI — Complete AI Reminder SaaS Foundation (Phase 1)
+# Remi AI (Remique) — Multi-Channel AI Assistant & Zero-Knowledge Vault
 
-Remi AI is an enterprise-grade multi-user SaaS application that empowers users to create and manage personal and professional reminders through natural language in **Bengali**, **Banglish**, and **English**, powered by **NVIDIA NIM** (`openai/gpt-oss-20b`).
+Remique is an enterprise-grade multi-channel SaaS application that empowers users to create and manage personal and professional reminders through natural language in **Bengali**, **Banglish**, and **English**, powered by **NVIDIA NIM** (`openai/gpt-oss-20b`), with native automated delivery across both **Telegram** and **Meta WhatsApp Cloud API**.
 
 ---
 
@@ -13,6 +13,9 @@ Remi AI is an enterprise-grade multi-user SaaS application that empowers users t
   - **Base URL:** `https://integrate.api.nvidia.com/v1`
   - **Default Model:** `openai/gpt-oss-20b`
 - **Supported Natural Input Languages:** Bengali (`বাংলা`), Banglish (Bengali in Latin script), and English
+- **Multi-Channel Integrations:**
+  - **Telegram Bot API:** 1-click deep linking `/start <token>`, natural language parsing, private document/photo vault storage & retrieval, automated reminder alerts.
+  - **Meta WhatsApp Cloud API:** Official WhatsApp Business Cloud API v21.0, 24h messaging window adherence, HSM template fallbacks outside window, OTP verification.
 - **Theme Support:** Clean enterprise light theme (default) with toggleable dark theme (Alpine.js + CSS variables)
 - **Architecture:** Modular monolith with service-oriented business logic and policy-enforced user scoping
 - **Deployment Compatibility:** Shared hosting / cPanel compatible without requiring Redis, Docker, or long-running daemons.

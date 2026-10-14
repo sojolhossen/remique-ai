@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'whatsapp/webhook',
             'api/whatsapp/webhook',
+            'telegram/webhook',
         ]);
 
         $middleware->web(append: [

@@ -28,9 +28,13 @@ class SendScheduledReminders extends Command
      */
     protected $description = 'Find due reminders and deliver them atomically via WhatsApp with 24h window compliance';
 
+    protected \App\Services\Telegram\TelegramBotService $telegramService;
+
     public function __construct(
-        protected WhatsAppCloudApiService $apiService
+        protected WhatsAppCloudApiService $apiService,
+        ?\App\Services\Telegram\TelegramBotService $telegramService = null
     ) {
+        $this->telegramService = $telegramService ?? app(\App\Services\Telegram\TelegramBotService::class);
         parent::__construct();
     }
 
@@ -100,8 +104,34 @@ class SendScheduledReminders extends Command
         }
 
         $identity = $user->primaryWhatsAppIdentity;
+        $telegramIdentity = $user->primaryTelegramIdentity;
+
+        if ((! $identity || ! $identity->isActive()) && (! $telegramIdentity || ! $telegramIdentity->isActive())) {
+            $this->warn("Skipping reminder #{$reminder->id}: user #{$user->id} has no active WhatsApp or Telegram channels linked.");
+            return;
+        }
+
+        $userTz = $user->timezone ?? 'Asia/Dhaka';
+        $localTime = $reminder->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
+
+        // Deliver via Telegram if active
+        if ($telegramIdentity && $telegramIdentity->isActive() && in_array($user->preferred_channel ?? 'all', ['telegram', 'all'])) {
+            $telegramText = "🔔 <b>REMINDER ALERT</b>\n\n<b>{$reminder->title}</b>\nScheduled: {$localTime} ({$userTz})";
+            if (! empty($reminder->description)) {
+                $telegramText .= "\n\n<i>Notes: {$reminder->description}</i>";
+            }
+            $this->telegramService->sendMessage($telegramIdentity->chat_id, $telegramText);
+            $this->info("Delivered reminder #{$reminder->id} via Telegram chat #{$telegramIdentity->chat_id}");
+        }
+
         if (! $identity || ! $identity->isActive()) {
-            $this->warn("Skipping reminder #{$reminder->id}: user #{$user->id} has no active verified WhatsApp number.");
+            // Delivery completed via Telegram
+            if ($reminder->recurrence === Reminder::RECURRENCE_NONE) {
+                $reminder->markAsCompleted();
+            } else {
+                $nextDue = $this->calculateNextOccurrence($reminder->due_at, $reminder->recurrence);
+                $reminder->update(['due_at' => $nextDue]);
+            }
             return;
         }
 
