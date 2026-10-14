@@ -288,282 +288,128 @@ class TelegramMessageProcessor
 
     protected function handleTextCommand(User $user, string $chatId, string $text): void
     {
-        $lowerText = mb_strtolower(trim($text));
-        $userName = $user->name ? explode(' ', $user->name)[0] : 'ভাই';
         $userTz = $user->timezone ?: 'Asia/Dhaka';
 
-        // 1. Natural Human-like Conversational Queries & Chat
-        if ($this->handleConversationalChat($user, $chatId, $lowerText, $userName)) {
+        // 1. Direct AI interpretation for ALL user inputs (No preset messages)
+        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id);
+
+        if (! $interpretation->success) {
+            $errorMessage = $interpretation->errorMessage
+                ?: "AI সার্ভিস এই মুহূর্তে রেসপন্স করছে না। দয়া করে আপনার .env ফাইলে NVIDIA_NIM_API_KEY কনফিগার করা আছে কি না যাচাই করুন।";
+            $this->botService->sendMessage($chatId, "⚠️ " . $errorMessage);
             return;
         }
 
-        // 2. Check for vault file retrieval intent
-        $fileKeywords = ['dekhaw', 'dekhao', 'dakhaw', 'khuje dao', 'khuje daw', 'send my', 'show my', 'get my', 'find my', 'invoice', 'receipt', 'bill', 'file dao'];
-        $isSearchIntent = false;
-        foreach ($fileKeywords as $kw) {
-            if (str_contains($lowerText, $kw)) {
-                $isSearchIntent = true;
-                break;
-            }
-        }
-
-        if ($isSearchIntent) {
-            $results = $this->vaultService->searchFiles($user, $text, limit: 3);
+        // 2. Intent: Retrieve file from vault
+        if ($interpretation->intent === 'retrieve_file') {
+            $query = $interpretation->searchQuery ?: $text;
+            $results = $this->vaultService->searchFiles($user, $query, limit: 3);
             if ($results->isNotEmpty()) {
                 $match = $results->first();
                 $path = $this->vaultService->getFilePathForUser($user, $match->id);
                 if ($path && file_exists($path)) {
+                    $caption = $interpretation->conversationalReply ?: "📄 {$match->original_filename}";
                     if ($match->isPdf()) {
-                        $this->botService->sendDocument($chatId, $path, "📄 এই যে {$userName} ভাই, আপনার ফাইল: {$match->original_filename}");
+                        $this->botService->sendDocument($chatId, $path, $caption);
                     } else {
-                        $this->botService->sendPhoto($chatId, $path, "🖼️ এই যে {$userName} ভাই, আপনার ফাইল: {$match->original_filename}");
+                        $this->botService->sendPhoto($chatId, $path, $caption);
                     }
                     return;
                 }
-            } else {
-                $this->botService->sendMessage($chatId, "🔍 {$userName} ভাই, এই নামে আপনার মেমোরি ভল্টে কোনো ফাইল খুঁজে পাওয়া যায়নি। আপনি কোনো ছবি বা PDF পাঠালে আমি তা নিরাপদে রেখে দেব।");
+            }
+
+            $reply = $interpretation->conversationalReply ?: "আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি।";
+            $this->botService->sendMessage($chatId, $reply);
+            return;
+        }
+
+        // 3. Intent: List reminders
+        if ($interpretation->intent === 'list_reminders') {
+            $reminders = Reminder::forUser($user->id)
+                ->scheduled()
+                ->orderBy('due_at')
+                ->limit(5)
+                ->get();
+
+            if ($reminders->isEmpty()) {
+                $this->botService->sendMessage($chatId, "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।");
                 return;
             }
-        }
 
-        // 3. List reminders intent
-        if (str_contains($lowerText, 'reminder dekhao') || str_contains($lowerText, 'list') || str_contains($lowerText, 'ki ki reminder') || str_contains($lowerText, 'sob reminder')) {
-            $this->respondWithReminderList($user, $chatId, $userTz, $userName);
+            $list = "📋 <b>আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n";
+            foreach ($reminders as $idx => $rem) {
+                $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
+                $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
+                $num = $idx + 1;
+                $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n\n";
+            }
+
+            $this->botService->sendMessage($chatId, trim($list));
             return;
         }
 
-        // 4. Natural language reminder parsing (via NVIDIA NIM or smart local engine)
-        $reminderData = null;
-
-        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id);
-        if ($interpretation->conversationalReply && $interpretation->intent === 'general_chat') {
-            $this->botService->sendMessage($chatId, $interpretation->conversationalReply);
+        // 4. Intent: Cancel reminder
+        if ($interpretation->intent === 'cancel_reminder') {
+            $identifier = $interpretation->targetReminderIdentifier ?? $interpretation->title;
+            $qb = Reminder::forUser($user->id)->scheduled();
+            if ($identifier) {
+                $qb->where('title', 'like', "%{$identifier}%");
+            }
+            $reminder = $qb->latest('due_at')->first();
+            if ($reminder) {
+                $reminder->markAsCancelled();
+                $reply = $interpretation->conversationalReply ?: "🗑️ '{$reminder->title}' রিমাইন্ডারটি বাতিল করা হয়েছে।";
+                $this->botService->sendMessage($chatId, $reply);
+            } else {
+                $reply = $interpretation->conversationalReply ?: "বাতিল করার মতো কোনো রিমাইন্ডার পাওয়া যায়নি।";
+                $this->botService->sendMessage($chatId, $reply);
+            }
             return;
         }
-        if ($interpretation->success && ! $interpretation->hasMissingInfo) {
-            $reminderData = [
-                'title' => $interpretation->title ?? 'Reminder',
-                'date' => $interpretation->date ?? Carbon::now($userTz)->toDateString(),
-                'time' => $interpretation->time ?? '09:00:00',
-                'recurrence' => $interpretation->recurrence ?? 'none',
-                'priority' => $interpretation->priority ?? 'medium',
-                'lang' => ucfirst($interpretation->detectedLanguage ?? 'auto'),
-            ];
-        }
 
-        // If AI not configured or didn't extract, try smart local extractor
-        if (! $reminderData) {
-            $reminderData = $this->extractLocalReminder($lowerText, $userTz);
-        }
-
-        if ($reminderData) {
-            $dueAtInUserTz = Carbon::createFromFormat('Y-m-d H:i:s', "{$reminderData['date']} {$reminderData['time']}", $userTz);
+        // 5. Intent: Create reminder
+        if ($interpretation->intent === 'create_reminder' && ! $interpretation->hasMissingInfo) {
+            $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
+            $time = $interpretation->time ?? '09:00:00';
+            $dueAtInUserTz = Carbon::createFromFormat('Y-m-d H:i:s', "{$date} {$time}", $userTz);
             $dueAtUtc = $dueAtInUserTz->copy()->setTimezone('UTC');
 
             $reminder = Reminder::create([
                 'user_id' => $user->id,
-                'title' => $reminderData['title'],
+                'title' => $interpretation->title ?? 'Reminder',
+                'description' => $interpretation->description,
                 'due_at' => $dueAtUtc,
                 'status' => 'scheduled',
-                'priority' => $reminderData['priority'],
-                'recurrence' => $reminderData['recurrence'],
+                'priority' => $interpretation->priority ?? 'medium',
+                'recurrence' => $interpretation->recurrence ?? 'none',
             ]);
 
             $formattedTime = $dueAtInUserTz->format('M d, Y h:i A');
+            $aiReply = $interpretation->conversationalReply;
+
             $reply = "🔔 <b>Reminder Scheduled!</b>\n\n" .
-                     "অবশ্যই {$userName} ভাই! রিমাইন্ডার সেট করে দিয়েছি:\n" .
-                     "📌 <b>কাজের নাম:</b> {$reminder->title}\n" .
-                     "⏰ <b>সময়:</b> {$formattedTime} ({$userTz})\n" .
-                     "🔁 <b>পুনরাবৃত্তি:</b> " . ucfirst($reminder->recurrence) . "\n\n" .
-                     "<i>সময় হলেই আপনাকে টেলিগ্রামে মনে করিয়ে দেবো! আর কোনো কাজ থাকলে বলতে পারেন।</i> 😊";
+                     ($aiReply ? "{$aiReply}\n\n" : '') .
+                     "📌 <b>Title:</b> {$reminder->title}\n" .
+                     "⏰ <b>Due:</b> {$formattedTime} ({$userTz})\n" .
+                     "🔁 <b>Recurrence:</b> " . ucfirst($reminder->recurrence);
 
             $this->botService->sendMessage($chatId, $reply);
             return;
         }
 
-        // 5. Friendly conversational fallback for any other natural input
-        $this->botService->sendMessage(
-            $chatId,
-            "হ্যাঁ {$userName} ভাই! 😊 আমি আপনার কথা বুঝতে পেরেছি।\n\nআপনি মানুষের সাথে যেভাবে চ্যাট করেন, সেভাবেই আমাকে সব বলতে পারেন। যেমন:\n• <i>'কাল সকাল ৯টায় মিটিং আছে মনে করায় দিও'</i>\n• <i>'আজ রাত ১০টায় ঔষধ খেতে হবে'</i>\n• <i>'আমার সব রিমাইন্ডার দেখাও'</i>\n• অথবা যেকোনো রসিদ বা জরুরি ছবি/PDF পাঠালে তা আমি ভল্টে গুছিয়ে রাখবো।\n\nবলুন ভাই, আপনাকে আর কীভাবে সাহায্য করতে পারি?"
-        );
-    }
-
-    /**
-     * Handle human-like conversational chitchat and greetings.
-     */
-    protected function handleConversationalChat(User $user, string $chatId, string $lowerText, string $userName): bool
-    {
-        // Check for "talk normally" / "chat like human" inquiry
-        if (
-            str_contains($lowerText, 'normaly') ||
-            str_contains($lowerText, 'chat kori') ||
-            str_contains($lowerText, 'kotha bolte') ||
-            str_contains($lowerText, 'user er sathe') ||
-            str_contains($lowerText, 'manusher moto')
-        ) {
-            $this->botService->sendMessage(
-                $chatId,
-                "হ্যাঁ {$userName} ভাই! আপনি একদম রক্ত-মাংসের মানুষের মতো করেই আমার সাথে সাধারণ ভাষায় কথা বলতে পারবেন। 😊\n\nকোনো ফরমাল কমান্ড লাগবে না — আপনি যেভাবে বন্ধুদের সাথে চ্যাট করেন, আমাকেও সেভাবেই কথা বলুন।\n\nযেমন আপনি বলতে পারেন:\n• <i>'কাল সকাল ৯টায় ক্লায়েন্টকে কল দিতে হবে মনে করাই দিস'</i>\n• <i>'আজ রাত ১০টায় ঔষধ'</i>\n• <i>'আমার কী কী কাজ বাকি আছে দেখা তো'</i>\n\nআমি আপনার পুরো কথা বুঝে সেভাবে কাজ করে দেবো। কেমন আছেন বলুন?"
-            );
-            return true;
-        }
-
-        // Greetings & Well-being
-        $wellBeingPatterns = ['kemon aso', 'kemon acho', 'kemon achen', 'kemon ado', 'valoni', 'bhalo achi', 'bhalo aso', 'are vai', 'vai kemon', 'bhai kemon'];
-        foreach ($wellBeingPatterns as $p) {
-            if (str_contains($lowerText, $p)) {
-                $this->botService->sendMessage(
-                    $chatId,
-                    "আলহামদুলিল্লাহ {$userName} ভাই, আমি খুব ভালো আছি! 😊 আপনি কেমন আছেন? আপনার দিনকাল কেমন কাটছে?\n\nআপনার যেকোনো কাজের কথা বা রিমাইন্ডার থাকলে আমাকে নিশ্চিন্তে বলতে পারেন!"
-                );
-                return true;
-            }
-        }
-
-        // Simple Hellos & Hi
-        $helloPatterns = ['hello', 'hi', 'hy', 'hey', 'helo', 'heya', 'salam', 'assalamu', 'assalamualaikum'];
-        foreach ($helloPatterns as $p) {
-            if ($lowerText === $p || str_starts_with($lowerText, $p . ' ') || str_ends_with($lowerText, ' ' . $p)) {
-                $this->botService->sendMessage(
-                    $chatId,
-                    "হ্যালো {$userName} ভাই! 👋 ওয়ালাইকুম আসসালাম। কেমন আছেন?\n\nআমি আপনার পার্সোনাল এআই অ্যাসিস্ট্যান্ট। আজ আপনাকে কীভাবে সাহায্য করতে পারি বলুন?"
-                );
-                return true;
-            }
-        }
-
-        // Chitchat / What are you doing / What's up
-        $activityPatterns = ['ki koro', 'ki korteso', 'ki korso', 'ki obostha', 'ki obstha', 'ki khobor', 'kire'];
-        foreach ($activityPatterns as $p) {
-            if (str_contains($lowerText, $p)) {
-                $this->botService->sendMessage(
-                    $chatId,
-                    "এইতো {$userName} ভাই! আপনার সব রিমাইন্ডার আর মেমোরি ভল্ট পাহারা দিচ্ছি। 🤖\n\nআপনার আজকের কী কী প্ল্যান? কোনো রিমাইন্ডার সেট করে রাখতে হবে?"
-                );
-                return true;
-            }
-        }
-
-        // Identity / Capabilities
-        $identityPatterns = ['ke tumi', 'tumi ke', 'who are you', 'help', 'tumi ki korte paro', 'ki ki korte paro'];
-        foreach ($identityPatterns as $p) {
-            if (str_contains($lowerText, $p)) {
-                $this->botService->sendMessage(
-                    $chatId,
-                    "আমি <b>Remique</b> — আপনার পার্সোনাল এআই অ্যাসিস্ট্যান্ট! 🤖✨\n\nআপনি স্বাভাবিক বাংলায় বা বাংলিশে আমার সাথে কথা বলে:\n1️⃣ ⏰ <b>রিমাইন্ডার সেট করতে পারেন:</b> যেমন <i>'কাল সকাল ৯টায় মিটিং'</i> বা <i>'আজ রাত ১০টায় ঔষধ'</i>\n2️⃣ 📋 <b>রিমাইন্ডার দেখতে পারেন:</b> <i>'আমার সব রিমাইন্ডার দেখাও'</i>\n3️⃣ 📁 <b>প্রাইভেট মেমোরি ভল্ট:</b> যেকোনো ছবি, ভাউচার বা PDF পাঠিয়ে দিলে আমি তা আজীবনের জন্য নিরাপদে রাখবো এবং চাইলে খুঁজে দেবো।\n\nআপনি একদম রক্ত-মাংসের মানুষের মতোই স্বাভাবিক ভাষায় যেকোনো নির্দেশ দিতে পারেন!"
-                );
-                return true;
-            }
-        }
-
-        // Thanks
-        $thanksPatterns = ['dhonnobad', 'thanks', 'thank you', 'shukriya', 'onek dhonnobad'];
-        foreach ($thanksPatterns as $p) {
-            if (str_contains($lowerText, $p)) {
-                $this->botService->sendMessage(
-                    $chatId,
-                    "আপনাকে অনেক স্বাগতম {$userName} ভাই! 😊 যেকোনো প্রয়োজনে আমি সবসময় আপনার পাশে আছি।"
-                );
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Respond with upcoming reminders list.
-     */
-    protected function respondWithReminderList(User $user, string $chatId, string $userTz, string $userName): void
-    {
-        $reminders = Reminder::forUser($user->id)
-            ->scheduled()
-            ->orderBy('due_at')
-            ->limit(5)
-            ->get();
-
-        if ($reminders->isEmpty()) {
-            $this->botService->sendMessage($chatId, "📋 {$userName} ভাই, আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার নেই।\n\nনতুন রিমাইন্ডার সেট করতে চাইলে স্বাভাবিকভাবে লিখুন: <i>'কাল সকাল ১০টায় মিটিং'</i>");
+        // 6. Clarification question if information is missing
+        if ($interpretation->hasMissingInfo && $interpretation->clarificationQuestion) {
+            $this->botService->sendMessage($chatId, $interpretation->clarificationQuestion);
             return;
         }
 
-        $list = "📋 <b>{$userName} ভাই, আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n";
-        foreach ($reminders as $idx => $rem) {
-            $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
-            $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
-            $num = $idx + 1;
-            $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n\n";
+        // 7. Pure AI-generated conversational reply
+        if (! empty($interpretation->conversationalReply)) {
+            $this->botService->sendMessage($chatId, $interpretation->conversationalReply);
+            return;
         }
 
-        $this->botService->sendMessage($chatId, trim($list));
-    }
-
-    /**
-     * Smart local NLP reminder extractor for Bengali & Banglish.
-     */
-    protected function extractLocalReminder(string $text, string $userTz): ?array
-    {
-        $date = null;
-        $time = null;
-
-        // Date detection
-        if (str_contains($text, 'kal') || str_contains($text, 'কাল') || str_contains($text, 'tomorrow') || str_contains($text, 'agamikal') || str_contains($text, 'আগামীকাল')) {
-            $date = Carbon::now($userTz)->addDay()->toDateString();
-        } elseif (str_contains($text, 'porshu') || str_contains($text, 'পরশু')) {
-            $date = Carbon::now($userTz)->addDays(2)->toDateString();
-        } elseif (str_contains($text, 'aj') || str_contains($text, 'আজ') || str_contains($text, 'today') || str_contains($text, 'ajke') || str_contains($text, 'আজকে')) {
-            $date = Carbon::now($userTz)->toDateString();
-        }
-
-        // Time detection
-        if (preg_match('/(?:shokal|সকাল)\s*(\d{1,2})/u', $text, $m)) {
-            $hour = str_pad($m[1], 2, '0', STR_PAD_LEFT);
-            $time = "{$hour}:00:00";
-        } elseif (preg_match('/(?:dupur|দুপুর)\s*(\d{1,2})/u', $text, $m)) {
-            $h = (int) $m[1];
-            $h = $h < 12 ? $h + 12 : $h;
-            $time = str_pad($h, 2, '0', STR_PAD_LEFT) . ":00:00";
-        } elseif (preg_match('/(?:bikal|বিকাল)\s*(\d{1,2})/u', $text, $m)) {
-            $h = (int) $m[1];
-            $h = $h < 12 ? $h + 12 : $h;
-            $time = str_pad($h, 2, '0', STR_PAD_LEFT) . ":00:00";
-        } elseif (preg_match('/(?:rat|রাত)\s*(\d{1,2})/u', $text, $m)) {
-            $h = (int) $m[1];
-            $h = $h < 12 ? $h + 12 : $h;
-            $time = str_pad($h, 2, '0', STR_PAD_LEFT) . ":00:00";
-        } elseif (preg_match('/(\d{1,2})\s*(?:tay|ta|টায়|টায়|টা)/u', $text, $m)) {
-            $h = (int) $m[1];
-            if ($h <= 6) {
-                $h += 12; // e.g. 3 tay -> 15:00
-            }
-            $time = str_pad($h, 2, '0', STR_PAD_LEFT) . ":00:00";
-        } elseif (preg_match('/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i', $text, $m)) {
-            $h = (int) $m[1];
-            $min = isset($m[2]) && $m[2] !== '' ? $m[2] : '00';
-            if (strtolower($m[3]) === 'pm' && $h < 12) {
-                $h += 12;
-            }
-            $time = str_pad($h, 2, '0', STR_PAD_LEFT) . ":{$min}:00";
-        }
-
-        // If date or time found, clean up title
-        if ($date || $time) {
-            $cleanTitle = preg_replace('/(kal|কাল|porshu|পরশু|aj|আজ|ajke|আজকে|tomorrow|today|shokal|সকাল|dupur|দুপুর|bikal|বিকাল|rat|রাত|\d{1,2}\s*(?:tay|ta|টায়|টায়|টা)|remind|korio|dio|korba|koro|mone|koriye|reminder|ache)/ui', '', $text);
-            $cleanTitle = trim(preg_replace('/\s+/', ' ', $cleanTitle));
-            if (empty($cleanTitle) || strlen($cleanTitle) < 2) {
-                $cleanTitle = 'Reminder';
-            }
-
-            return [
-                'title' => ucfirst($cleanTitle),
-                'date' => $date ?: Carbon::now($userTz)->toDateString(),
-                'time' => $time ?: '09:00:00',
-                'priority' => 'medium',
-                'recurrence' => 'none',
-                'lang' => 'Banglish',
-            ];
-        }
-
-        return null;
+        // Fallback
+        $this->botService->sendMessage($chatId, "আমি আপনার কথাটি বুঝতে পেরেছি। আপনার কোনো রিমাইন্ডার বা সাহায্য প্রয়োজন হলে বলুন।");
     }
 }

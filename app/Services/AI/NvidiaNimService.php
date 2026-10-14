@@ -177,7 +177,8 @@ class NvidiaNimService
                 totalTokens: $tokens['total_tokens'] ?? null,
                 searchQuery: $parsedData['search_query'] ?? null,
                 fileType: $parsedData['file_type'] ?? null,
-                targetReminderIdentifier: $parsedData['target_reminder_identifier'] ?? null
+                targetReminderIdentifier: $parsedData['target_reminder_identifier'] ?? null,
+                conversationalReply: $parsedData['conversational_reply'] ?? null
             );
 
         } catch (RequestException $e) {
@@ -263,8 +264,10 @@ SUPPORTED INTENTS:
    - "গত সপ্তাহে পাঠানো X89 earbuds-এর ছবিটা আমাকে দাও।"
    - "amar PDF invoice-ta khuje dao"
    - "Find my passport PDF / photo."
-7. "unknown":
-   - Any general greeting or unparseable input.
+7. "general_chat":
+   - Any conversation, greeting, question, chitchat, banter, asking how you are, asking for help, or talking naturally in Bengali, Banglish, or English.
+8. "unknown":
+   - Unparseable noise or gibberish.
 
 DATE & TIME RESOLUTION RULES:
 - "today", "আজ", "ajke" -> {$currentDate}
@@ -279,7 +282,8 @@ DATE & TIME RESOLUTION RULES:
 CRITICAL JSON SCHEMA:
 You MUST respond with ONLY a single JSON object with these exact keys:
 {
-  "intent": "create_reminder" | "list_reminders" | "reschedule_reminder" | "cancel_reminder" | "complete_reminder" | "retrieve_file" | "unknown",
+  "intent": "create_reminder" | "list_reminders" | "reschedule_reminder" | "cancel_reminder" | "complete_reminder" | "retrieve_file" | "general_chat" | "unknown",
+  "conversational_reply": "Your intelligent, natural, human-like response in Bengali, Banglish, or English answering whatever the user said, greeting them, chatting, or confirming an action naturally without robotic templates.",
   "title": "Clean concise reminder title or null",
   "description": null,
   "date": "YYYY-MM-DD" | null,
@@ -298,6 +302,7 @@ You MUST respond with ONLY a single JSON object with these exact keys:
 
 MISSING INFORMATION & CLARIFICATION:
 - If creating a reminder without explicit date or time, set "has_missing_info": true, add to "missing_fields", and generate a polite "clarification_question" in the user's detected language.
+- For general_chat, provide a warm, empathetic, intelligent conversational reply in "conversational_reply" matching the user's language and tone.
 - DO NOT invent dates or times. If ambiguous, ask for clarification.
 - DO NOT wrap in markdown fences. Output raw JSON only.
 PROMPT;
