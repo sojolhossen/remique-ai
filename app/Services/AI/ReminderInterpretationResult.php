@@ -25,6 +25,7 @@ class ReminderInterpretationResult
         public ?string $searchQuery = null,
         public ?string $fileType = null,
         public ?string $targetReminderIdentifier = null,
+        public ?string $conversationalReply = null,
     ) {}
 
     public function toArray(): array
@@ -50,6 +51,7 @@ class ReminderInterpretationResult
             'search_query' => $this->searchQuery,
             'file_type' => $this->fileType,
             'target_reminder_identifier' => $this->targetReminderIdentifier,
+            'conversational_reply' => $this->conversationalReply,
         ];
     }
 }
