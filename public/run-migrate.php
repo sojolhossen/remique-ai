@@ -17,6 +17,7 @@ try {
     require $base . '/vendor/autoload.php';
     $app = require_once $base . '/bootstrap/app.php';
     $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+    $kernel->bootstrap();
 
     echo "Running: php artisan migrate --force...\n\n";
     \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
