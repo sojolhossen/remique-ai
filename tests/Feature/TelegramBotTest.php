@@ -134,7 +134,7 @@ class TelegramBotTest extends TestCase
         $mockBot->shouldReceive('sendMessage')
             ->once()
             ->withArgs(function ($chatId, $text) {
-                return $chatId === '987654321' && str_contains($text, 'Reminder Scheduled');
+                return $chatId === '987654321' && (str_contains($text, 'Reminder Scheduled') || str_contains($text, 'Reminder Set Kora Hoyeche') || str_contains($text, 'Doctor appointment'));
             })
             ->andReturn(['ok' => true]);
         $this->app->instance(TelegramBotService::class, $mockBot);

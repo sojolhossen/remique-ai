@@ -351,6 +351,8 @@ class TelegramMessageProcessor
             return;
         }
 
+        $lang = $this->resolveLanguage($text, $interpretation->detectedLanguage);
+
         // 4. Intent: Retrieve file from vault
         if ($interpretation->intent === 'retrieve_file') {
             $query = $interpretation->searchQuery ?: $text;
@@ -359,11 +361,21 @@ class TelegramMessageProcessor
                 $match = $results->first();
                 $path = $this->vaultService->getFilePathForUser($user, $match->id);
                 if ($path && file_exists($path)) {
+                    $defaultName = match ($lang) {
+                        'bengali' => 'সংরক্ষিত ছবি',
+                        'banglish' => 'Saved photo',
+                        default => 'Stored photo',
+                    };
                     $displayName = ! empty($match->caption)
                         ? $match->caption
-                        : ($match->original_filename !== 'file_0.jpg' ? $match->original_filename : 'সংরক্ষিত ছবি');
+                        : ($match->original_filename !== 'file_0.jpg' ? $match->original_filename : $defaultName);
 
-                    $caption = "📄 <b>{$displayName}</b>\n\nআপনার মেমোরি ভল্ট থেকে ফাইলটি খুঁজে পাওয়া গেছে!";
+                    $caption = match ($lang) {
+                        'bengali' => "📄 <b>{$displayName}</b>\n\nআপনার মেমোরি ভল্ট থেকে ফাইলটি খুঁজে পাওয়া গেছে!",
+                        'banglish' => "📄 <b>{$displayName}</b>\n\nApnar memory vault theke file ti khuje pawa geche!",
+                        default => "📄 <b>{$displayName}</b>\n\nFound from your Memory Vault!",
+                    };
+
                     if ($match->isPdf()) {
                         $this->botService->sendDocument($chatId, $path, $caption);
                     } else {
@@ -383,9 +395,17 @@ class TelegramMessageProcessor
 
             $totalFiles = $user->vaultFiles()->count();
             if ($totalFiles === 0) {
-                $reply = "❌ আপনার মেমোরি ভল্টে এই মুহূর্তে কোনো ফাইল বা ডকুমেন্টস সেভ করা নেই।\n\nআপনি এখানে যেকোনো সময় ছবি বা PDF পাঠালে আমি তা আপনার ভল্টে সুরক্ষিতভাবে গুছিয়ে রাখব।";
+                $reply = match ($lang) {
+                    'bengali' => "❌ আপনার মেমোরি ভল্টে এই মুহূর্তে কোনো ফাইল বা ডকুমেন্টস সেভ করা নেই।\n\nআপনি এখানে যেকোনো সময় ছবি বা PDF পাঠালে আমি তা আপনার ভল্টে সুরক্ষিতভাবে গুছিয়ে রাখব।",
+                    'banglish' => "❌ Apnar memory vault e ei muhurte kono file ba document save kora nei.\n\nApni je kono shomoy photo ba PDF pathale ami vault e secure vabe rekhe dibo.",
+                    default => "❌ You do not have any files saved in your Memory Vault yet.\n\nSend any photo or document here anytime to store it securely.",
+                };
             } else {
-                $reply = "🔍 দুঃখিত, আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি। অনুগ্রহ করে ফাইলের সঠিক বিষয় বা নাম উল্লেখ করুন।";
+                $reply = match ($lang) {
+                    'bengali' => "🔍 দুঃখিত, আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি। অনুগ্রহ করে ফাইলের সঠিক বিষয় বা নাম উল্লেখ করুন।",
+                    'banglish' => "🔍 Sorry, apnar memory vault e '{$query}' er kono file pawa jayni. Please file er thik naam ba topic bolun.",
+                    default => "🔍 Sorry, no file matching '{$query}' was found in your Memory Vault. Please provide a more specific description.",
+                };
             }
 
             $this->sendReply($identity, $chatId, $reply);
@@ -401,11 +421,22 @@ class TelegramMessageProcessor
                 ->get();
 
             if ($reminders->isEmpty()) {
-                $this->sendReply($identity, $chatId, "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।");
+                $emptyReply = match ($lang) {
+                    'bengali' => "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।",
+                    'banglish' => "📋 Apnar ei muhurte kono pending reminder schedule kora nei.",
+                    default => "📋 You do not have any pending reminders scheduled at this moment.",
+                };
+                $this->sendReply($identity, $chatId, $emptyReply);
                 return;
             }
 
-            $list = "📋 <b>আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n";
+            $header = match ($lang) {
+                'bengali' => "📋 <b>আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n",
+                'banglish' => "📋 <b>Apnar pending reminder list:</b>\n\n",
+                default => "📋 <b>Your upcoming reminders:</b>\n\n",
+            };
+
+            $list = $header;
             foreach ($reminders as $idx => $rem) {
                 $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
                 $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
@@ -427,10 +458,20 @@ class TelegramMessageProcessor
             $reminder = $qb->latest('due_at')->first();
             if ($reminder) {
                 $reminder->markAsCancelled();
-                $reply = $interpretation->conversationalReply ?: "🗑️ '{$reminder->title}' রিমাইন্ডারটি বাতিল করা হয়েছে।";
+                $defaultSuccess = match ($lang) {
+                    'bengali' => "🗑️ '{$reminder->title}' রিমাইন্ডারটি বাতিল করা হয়েছে।",
+                    'banglish' => "🗑️ '{$reminder->title}' reminder ti cancel kora hoyeche.",
+                    default => "🗑️ Reminder '{$reminder->title}' has been cancelled.",
+                };
+                $reply = $interpretation->conversationalReply ?: $defaultSuccess;
                 $this->sendReply($identity, $chatId, $reply);
             } else {
-                $reply = $interpretation->conversationalReply ?: "বাতিল করার মতো কোনো রিমাইন্ডার পাওয়া যায়নি।";
+                $defaultNotFound = match ($lang) {
+                    'bengali' => "বাতিল করার মতো কোনো রিমাইন্ডার পাওয়া যায়নি।",
+                    'banglish' => "Cancel korar moto kono reminder pawa jayni.",
+                    default => "No matching reminder found to cancel.",
+                };
+                $reply = $interpretation->conversationalReply ?: $defaultNotFound;
                 $this->sendReply($identity, $chatId, $reply);
             }
             return;
@@ -456,11 +497,43 @@ class TelegramMessageProcessor
             $formattedTime = $dueAtInUserTz->format('M d, Y h:i A');
             $aiReply = $interpretation->conversationalReply;
 
-            $reply = "🔔 <b>Reminder Scheduled!</b>\n\n" .
+            if ($lang === 'bengali') {
+                $header = "🔔 <b>রিমাইন্ডার শিডিউল করা হয়েছে!</b>";
+                $titleLabel = "বিষয়:";
+                $timeLabel = "সময়:";
+                $recLabel = "পুনরাবৃত্তি:";
+                $recValue = match ($reminder->recurrence) {
+                    'daily' => 'প্রতিদিন',
+                    'weekly' => 'সাপ্তাহিক',
+                    'monthly' => 'মাসিক',
+                    'yearly' => 'বাৎসরিক',
+                    default => 'একবার',
+                };
+            } elseif ($lang === 'banglish') {
+                $header = "🔔 <b>Reminder Set Kora Hoyeche!</b>";
+                $titleLabel = "Title:";
+                $timeLabel = "Shomoy:";
+                $recLabel = "Recurrence:";
+                $recValue = match ($reminder->recurrence) {
+                    'daily' => 'Protidin',
+                    'weekly' => 'Saptahik',
+                    'monthly' => 'Mashik',
+                    'yearly' => 'Bochor e ekbar',
+                    default => 'Ekbar',
+                };
+            } else {
+                $header = "🔔 <b>Reminder Scheduled!</b>";
+                $titleLabel = "Title:";
+                $timeLabel = "Due:";
+                $recLabel = "Recurrence:";
+                $recValue = ucfirst($reminder->recurrence);
+            }
+
+            $reply = "{$header}\n\n" .
                      ($aiReply ? "{$aiReply}\n\n" : '') .
-                     "📌 <b>Title:</b> {$reminder->title}\n" .
-                     "⏰ <b>Due:</b> {$formattedTime} ({$userTz})\n" .
-                     "🔁 <b>Recurrence:</b> " . ucfirst($reminder->recurrence);
+                     "📌 <b>{$titleLabel}</b> {$reminder->title}\n" .
+                     "⏰ <b>{$timeLabel}</b> {$formattedTime} ({$userTz})\n" .
+                     "🔁 <b>{$recLabel}</b> {$recValue}";
 
             $this->sendReply($identity, $chatId, $reply);
             return;
@@ -479,7 +552,32 @@ class TelegramMessageProcessor
         }
 
         // Fallback
-        $this->sendReply($identity, $chatId, "আমি আপনার কথাটি বুঝতে পেরেছি। আপনার কোনো রিমাইন্ডার বা সাহায্য প্রয়োজন হলে বলুন।");
+        $fallback = match ($lang) {
+            'bengali' => "আমি আপনার কথাটি বুঝতে পেরেছি। আপনার কোনো রিমাইন্ডার বা সাহায্য প্রয়োজন হলে বলুন।",
+            'banglish' => "Ami apnar kotha bujhte perechi. Apnar kono reminder ba help lagle bolun.",
+            default => "I understand. Let me know if you need any reminders or assistance.",
+        };
+        $this->sendReply($identity, $chatId, $fallback);
+    }
+
+    /**
+     * Determine effective communication mode: 'bengali', 'banglish', or 'english'.
+     */
+    protected function resolveLanguage(string $userText, ?string $aiDetectedLang): string
+    {
+        if (preg_match('/[\x{0980}-\x{09FF}]/u', $userText)) {
+            return 'bengali';
+        }
+
+        if ($aiDetectedLang === 'banglish' || $aiDetectedLang === 'bengali') {
+            return 'banglish';
+        }
+
+        if (preg_match('/\b(ami|tumi|apni|kemon|aso|achen|koro|korio|hobe|hoyeche|shokal|rat|khobor|ki|na|valo|bhalo|bolun|bolte|paro|ekta|akta|mone|rakho|rakhba|dekhao|dao|amar|amake|tomar|apnar|kal|ajke|porshu)\b/i', $userText)) {
+            return 'banglish';
+        }
+
+        return 'english';
     }
 
     protected function sendReply(TelegramIdentity $identity, string $chatId, string $replyText): void
