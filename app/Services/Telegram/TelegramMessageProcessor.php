@@ -288,11 +288,28 @@ class TelegramMessageProcessor
 
     protected function handleTextCommand(User $user, string $chatId, string $text): void
     {
-        // 1. Check for vault file retrieval intent
+        $lowerText = mb_strtolower(trim($text));
+
+        // 1. Friendly Conversational Greetings & Bot Info
+        $greetingPatterns = [
+            'kemon aso', 'kemon acho', 'kemon achen', 'ki khobor', 'ki obstha',
+            'hello', 'hi', 'hey', 'salam', 'assalamu', 'ke tumi', 'tumi ke', 'who are you', 'help',
+        ];
+        foreach ($greetingPatterns as $pattern) {
+            if (str_contains($lowerText, $pattern)) {
+                $this->botService->sendMessage(
+                    $chatId,
+                    "আলহামদুলিল্লাহ, ভালো আছি! 😊\n\nআমি <b>Remique</b>, আপনার পার্সোনাল এআই অ্যাসিস্ট্যান্ট।\n\nআপনি আমাকে যেকোনো স্বাভাবিক ভাষায় বলতে পারেন:\n• ⏰ <b>রিমাইন্ডার সেট করতে:</b> <i>'কাল সকাল ৯টায় মিটিং'</i> বা <i>'আজ রাত ১০টায় ঔষধ'</i>\n• 📋 <b>রিমাইন্ডার দেখতে:</b> <i>'আমার সব রিমাইন্ডার দেখাও'</i>\n• 📁 <b>মেমোরি ভল্ট:</b> যেকোনো ছবি বা PDF ফাইল পাঠালে আমি তা নিরাপদে জমা রাখবো এবং পরবর্তীতে খুঁজে দেব।\n\nআপনাকে আজ কীভাবে সাহায্য করতে পারি?"
+                );
+                return;
+            }
+        }
+
+        // 2. Check for vault file retrieval intent
         $fileKeywords = ['dekhaw', 'dekhao', 'dakhaw', 'khuje dao', 'khuje daw', 'send my', 'show my', 'get my', 'find my', 'invoice', 'receipt', 'bill'];
         $isSearchIntent = false;
         foreach ($fileKeywords as $kw) {
-            if (str_contains(mb_strtolower($text), $kw)) {
+            if (str_contains($lowerText, $kw)) {
                 $isSearchIntent = true;
                 break;
             }
@@ -314,19 +331,44 @@ class TelegramMessageProcessor
             }
         }
 
-        // 2. Natural language reminder parsing via NVIDIA NIM
-        $userTz = $user->timezone ?: 'UTC';
+        // 3. Natural language parsing via NVIDIA NIM
+        $userTz = $user->timezone ?: 'Asia/Dhaka';
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id);
+
+        // Handle list reminders intent
+        if ($interpretation->intent === 'list_reminders' || str_contains($lowerText, 'reminder dekhao') || str_contains($lowerText, 'list')) {
+            $reminders = Reminder::forUser($user->id)
+                ->scheduled()
+                ->orderBy('due_at')
+                ->limit(5)
+                ->get();
+
+            if ($reminders->isEmpty()) {
+                $this->botService->sendMessage($chatId, "📋 আপনার কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।\n\nনতুন রিমাইন্ডার সেট করতে লিখুন: <i>'কাল সকাল ১০টায় প্রজেক্ট রিভিউ'</i>");
+                return;
+            }
+
+            $list = "📋 <b>আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n";
+            foreach ($reminders as $idx => $rem) {
+                $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
+                $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
+                $num = $idx + 1;
+                $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n\n";
+            }
+
+            $this->botService->sendMessage($chatId, trim($list));
+            return;
+        }
 
         if (! $interpretation->success || $interpretation->hasMissingInfo) {
             $clarification = $interpretation->clarificationQuestion
-                ?: "I couldn't quite extract the reminder time. Try something like:\n• <i>'Kal shokal 9 tay meeting'</i>\n• <i>'আজ রাত ১০টায় ঔষধ খেতে হবে'</i>\n• <i>'Remind me tomorrow at 3pm to call client'</i>";
+                ?: "আমি রিমাইন্ডারের সময় বুঝতে পারিনি। যেমন এভাবে লিখুন:\n• <i>'কাল সকাল ৯টায় মিটিং'</i>\n• <i>'আজ রাত ১০টায় ঔষধ খেতে হবে'</i>\n• <i>'Remind me tomorrow at 3pm to call client'</i>";
 
             $this->botService->sendMessage($chatId, $clarification);
             return;
         }
 
-        // 3. Persist Reminder
+        // 4. Persist Reminder
         $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
         $time = $interpretation->time ?? '09:00:00';
         $dueAtInUserTz = Carbon::createFromFormat('Y-m-d H:i:s', "{$date} {$time}", $userTz);
@@ -350,7 +392,7 @@ class TelegramMessageProcessor
                  "⏰ <b>Due:</b> {$formattedTime} ({$userTz})\n" .
                  "🔁 <b>Recurrence:</b> " . ucfirst($reminder->recurrence) . "\n" .
                  "🎯 <b>Language:</b> {$langDetected}\n\n" .
-                 "<i>I will notify you here on Telegram when it's time!</i>";
+                 "<i>সময়মতো টেলিগ্রামে আপনাকে জানিয়ে দেব!</i>";
 
         $this->botService->sendMessage($chatId, $reply);
     }
