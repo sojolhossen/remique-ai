@@ -31,7 +31,8 @@ try {
     echo "✓ bootstrap/app.php loaded successfully\n";
 
     $kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
-    echo "✓ Http Kernel instantiated\n";
+    $kernel->bootstrap();
+    echo "✓ Http Kernel instantiated and bootstrapped\n";
 
     // Test DB connection
     echo "\n--- DB Connection Test ---\n";
@@ -41,12 +42,10 @@ try {
 } catch (\Throwable $e) {
     echo "❌ ERROR: " . $e->getMessage() . "\n";
     echo "In " . $e->getFile() . " on line " . $e->getLine() . "\n";
-    echo "\nStack Trace:\n" . $e->getTraceAsString() . "\n";
 }
 
 if (file_exists($base . '/storage/logs/laravel.log')) {
-    echo "\n--- Last 20 lines of laravel.log ---\n";
-    $lines = file($base . '/storage/logs/laravel.log');
-    $lastLines = array_slice($lines, -20);
-    echo implode('', $lastLines);
+    echo "\n--- Last 500 characters of laravel.log ---\n";
+    $content = file_get_contents($base . '/storage/logs/laravel.log');
+    echo substr($content, -1500);
 }
