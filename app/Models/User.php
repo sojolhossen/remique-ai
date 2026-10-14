@@ -140,10 +140,42 @@ class User extends Authenticatable
     }
 
     /**
+     * Get habits tracked by the user.
+     */
+    public function habits(): HasMany
+    {
+        return $this->hasMany(Habit::class);
+    }
+
+    /**
+     * Get habit completion logs of the user.
+     */
+    public function habitLogs(): HasMany
+    {
+        return $this->hasMany(HabitLog::class);
+    }
+
+    /**
      * Check if user is a standard customer.
      */
     public function isCustomer(): bool
     {
         return $this->role === 'customer';
+    }
+
+    /**
+     * Check if user has Morning Daily Digest enabled.
+     */
+    public function isMorningDigestEnabled(): bool
+    {
+        return (bool) ($this->notification_preferences['morning_digest_enabled'] ?? true);
+    }
+
+    /**
+     * Get preferred Morning Daily Digest time (e.g. '08:00').
+     */
+    public function getMorningDigestTime(): string
+    {
+        return (string) ($this->notification_preferences['morning_digest_time'] ?? '08:00');
     }
 }

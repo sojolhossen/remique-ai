@@ -66,6 +66,9 @@ class SettingsController extends Controller
             'notification_preferences' => [
                 'email' => (bool) $request->boolean('notification_email'),
                 'sound' => (bool) $request->boolean('notification_sound'),
+                'morning_digest_enabled' => (bool) $request->boolean('morning_digest_enabled'),
+                'morning_digest_time' => $request->input('morning_digest_time', '08:00'),
+                'habit_checkin_enabled' => (bool) $request->boolean('habit_checkin_enabled'),
             ],
         ];
 

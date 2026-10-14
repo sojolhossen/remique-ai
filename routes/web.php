@@ -54,6 +54,13 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/reminders/{reminder}/cancel', [ReminderController::class, 'cancel'])->name('reminders.cancel');
     Route::post('/reminders/{reminder}/reopen', [ReminderController::class, 'reopen'])->name('reminders.reopen');
 
+    // Daily Habits Tracker & Morning Digest
+    Route::get('/habits', [\App\Http\Controllers\HabitController::class, 'index'])->name('habits.index');
+    Route::post('/habits', [\App\Http\Controllers\HabitController::class, 'store'])->name('habits.store');
+    Route::post('/habits/{habit}/toggle', [\App\Http\Controllers\HabitController::class, 'toggle'])->name('habits.toggle');
+    Route::delete('/habits/{habit}', [\App\Http\Controllers\HabitController::class, 'destroy'])->name('habits.destroy');
+    Route::post('/habits/send-test-digest', [\App\Http\Controllers\HabitController::class, 'sendTestDigest'])->name('habits.send-test-digest');
+
     // Settings & Profile
     Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
     Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');

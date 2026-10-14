@@ -119,6 +119,44 @@
                         </option>
                     </select>
                 </div>
+
+                <!-- Daily Morning Briefing & Habit Alerts -->
+                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                    <span class="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                        Daily Digest & Habit Alerts
+                    </span>
+
+                    <div class="space-y-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
+                            <div>
+                                <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-900 dark:text-white">
+                                    <input type="checkbox" name="morning_digest_enabled" value="1"
+                                           {{ old('morning_digest_enabled', $user->isMorningDigestEnabled()) ? 'checked' : '' }}
+                                           class="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500">
+                                    <span>☀️ Daily Morning Briefing</span>
+                                </label>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400 ml-6">Receive a daily morning agenda of today's reminders, tasks, and habits.</p>
+                            </div>
+                            <div class="flex items-center gap-2 ml-6 sm:ml-0">
+                                <span class="text-[11px] text-slate-400">At</span>
+                                <input type="time" name="morning_digest_time" value="{{ old('morning_digest_time', $user->getMorningDigestTime()) }}"
+                                       class="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white">
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800">
+                            <div>
+                                <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-900 dark:text-white">
+                                    <input type="checkbox" name="habit_checkin_enabled" value="1"
+                                           {{ old('habit_checkin_enabled', $user->notification_preferences['habit_checkin_enabled'] ?? true) ? 'checked' : '' }}
+                                           class="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500">
+                                    <span>🌙 Evening Habit Check-in (08:00 PM)</span>
+                                </label>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400 ml-6">Remi alerts you in the evening if you have incomplete habits to preserve your streaks.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="pt-4 flex justify-end">

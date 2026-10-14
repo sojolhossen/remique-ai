@@ -12,6 +12,8 @@ use App\Services\AI\Contracts\AiServiceInterface;
 use App\Services\ReminderService;
 use App\Services\Vault\VaultService;
 use Carbon\Carbon;
+use App\Services\Digest\MorningDigestService;
+use App\Services\Habits\HabitService;
 use Illuminate\Support\Facades\Log;
 
 class TelegramMessageProcessor
@@ -20,8 +22,13 @@ class TelegramMessageProcessor
         protected TelegramBotService $botService,
         protected AiServiceInterface $aiService,
         protected ReminderService $reminderService,
-        protected VaultService $vaultService
-    ) {}
+        protected VaultService $vaultService,
+        protected ?HabitService $habitService = null,
+        protected ?MorningDigestService $digestService = null
+    ) {
+        $this->habitService = $habitService ?? app(HabitService::class);
+        $this->digestService = $digestService ?? app(MorningDigestService::class);
+    }
 
     /**
      * Process an incoming Telegram webhook update.
@@ -314,6 +321,50 @@ class TelegramMessageProcessor
             'message_id' => $messageId ? (string) $messageId : null,
             'body' => $text,
         ]);
+
+        $trimmedText = trim($text);
+
+        // A. Quick command: Daily Morning Briefing (/briefing, /today, "ajker briefing", "shokal er briefing")
+        if (preg_match('/^(\/briefing|\/today|briefing|morning briefing|ajker briefing|shokaler briefing|আজকের ব্রিফিং|মর্নিং ব্রিফিং)$/iu', $trimmedText)) {
+            $digest = $this->digestService->generateDigest($user);
+            $formatted = $this->digestService->formatTextMessage($digest);
+            $this->sendReply($identity, $chatId, $formatted);
+            return;
+        }
+
+        // B. Quick command: Habit List (/habits, "habits", "habit list", "হ্যাবিট দেখাও")
+        if (preg_match('/^(\/habits|habits|habit list|my habits|হ্যাবিট|হ্যাবিট দেখাও|হ্যাবিট লিস্ট)$/iu', $trimmedText)) {
+            $habits = $this->habitService->getUserHabitsWithStatus($user);
+            if ($habits->isEmpty()) {
+                $this->sendReply($identity, $chatId, "🔥 <b>No habits created yet!</b>\n\nVisit your Remique dashboard to add your daily habits, or add one from the web app at /habits.");
+            } else {
+                $msg = "🔥 <b>Your Daily Habits & Streaks:</b>\n\n";
+                foreach ($habits as $h) {
+                    $status = $h->is_completed_today ? '✅ Completed' : '⏳ Pending';
+                    $streak = $h->current_streak > 0 ? "• 🔥 {$h->current_streak}d streak" : "";
+                    $msg .= "{$status} — <b>{$h->name}</b> {$streak}\n";
+                }
+                $msg .= "\n<i>Reply 'done [habit name]' to check off!</i>";
+                $this->sendReply($identity, $chatId, $msg);
+            }
+            return;
+        }
+
+        // C. Quick command: Mark habit done ("done workout", "complete water", "পানি শেষ", "ব্যায়াম শেষ")
+        if (preg_match('/^(?:done|complete|finished|check|শেষ|করেছি)\s+(.+)$/iu', $trimmedText, $matches) ||
+            preg_match('/^(.+)\s+(?:done|complete|finished|check|শেষ|করেছি)$/iu', $trimmedText, $matches)) {
+            $habitKeyword = trim($matches[1]);
+            $res = $this->habitService->findAndCompleteByName($user, $habitKeyword);
+            if ($res) {
+                $habit = $res['habit'];
+                $streak = $res['streak'];
+                $statusVerb = $res['status'] === 'completed' ? 'marked as completed' : 'reopened as pending';
+                $streakMsg = $res['status'] === 'completed' ? "🔥 Current streak: <b>{$streak} days</b>\n\nKeep up the consistency!" : "Streak updated.";
+                $msg = "🎉 <b>Habit Status Updated!</b>\n\n'<b>{$habit->name}</b>' {$statusVerb} for today!\n{$streakMsg}";
+                $this->sendReply($identity, $chatId, $msg);
+                return;
+            }
+        }
 
         // 2. Enrich recently uploaded file if user provides description in follow-up message
         if (preg_match('/(ছবি|ফাইল|ডকুমেন্ট|রশিদ|নাম|photo|image|doc|slip|receipt|রেখে দাও|সেভ করো|মিষ্টি|বিড়াল)/iu', $text)) {

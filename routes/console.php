@@ -11,6 +11,14 @@ Artisan::command('inspire', function () {
     ->everyMinute()
     ->withoutOverlapping(5);
 
+\Illuminate\Support\Facades\Schedule::command('remi:send-morning-digest')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping(10);
+
+\Illuminate\Support\Facades\Schedule::command('remi:send-habit-checkin')
+    ->hourly()
+    ->withoutOverlapping(10);
+
 \Illuminate\Support\Facades\Schedule::command('remi:backup --verify --keep=7')
     ->dailyAt('02:00')
     ->withoutOverlapping(15);
