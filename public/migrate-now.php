@@ -17,6 +17,7 @@ if (! file_exists($base . '/vendor/autoload.php')) {
 require $base . '/vendor/autoload.php';
 $app = require_once $base . '/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->bootstrap();
 
 echo "<!DOCTYPE html><html><head><title>Remique AI Migration Runner</title>";
 echo "<style>body{background:#0f172a;color:#f8fafc;font-family:sans-serif;padding:30px;} pre{background:#1e293b;padding:15px;border-radius:8px;border:1px solid #334155;color:#38bdf8;}</style></head><body>";
