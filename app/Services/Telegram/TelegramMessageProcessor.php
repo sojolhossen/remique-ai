@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Models\AuditLog;
 use App\Models\Reminder;
 use App\Models\TelegramIdentity;
+use App\Models\TelegramMessage;
 use App\Models\User;
 use App\Services\AI\NvidiaNimService;
 use App\Services\ReminderService;
@@ -82,7 +83,7 @@ class TelegramMessageProcessor
 
         // 6. Handle natural language text commands
         if (! empty($text)) {
-            $this->handleTextCommand($user, $chatId, $text);
+            $this->handleTextCommand($user, $identity, $chatId, $text, $message['message_id'] ?? null);
         }
     }
 
@@ -286,21 +287,50 @@ class TelegramMessageProcessor
         }
     }
 
-    protected function handleTextCommand(User $user, string $chatId, string $text): void
-    {
+    protected function handleTextCommand(
+        User $user,
+        TelegramIdentity $identity,
+        string $chatId,
+        string $text,
+        mixed $messageId = null
+    ): void {
         $userTz = $user->timezone ?: 'Asia/Dhaka';
 
-        // 1. Direct AI interpretation for ALL user inputs (No preset messages)
-        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id);
+        // 1. Record incoming user message into conversation history
+        $inbound = TelegramMessage::create([
+            'telegram_identity_id' => $identity->id,
+            'chat_id' => $chatId,
+            'direction' => 'inbound',
+            'role' => 'user',
+            'message_id' => $messageId ? (string) $messageId : null,
+            'body' => $text,
+        ]);
+
+        // 2. Fetch recent conversation history (last 10 turns before current message)
+        $history = TelegramMessage::where('telegram_identity_id', $identity->id)
+            ->where('id', '<', $inbound->id)
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->reverse()
+            ->map(fn($m) => [
+                'role' => $m->role === 'assistant' ? 'assistant' : 'user',
+                'content' => $m->body,
+            ])
+            ->values()
+            ->toArray();
+
+        // 3. Direct AI interpretation for ALL user inputs with multi-turn memory
+        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
             $errorMessage = $interpretation->errorMessage
                 ?: "AI সার্ভিস এই মুহূর্তে রেসপন্স করছে না। দয়া করে আপনার .env ফাইলে NVIDIA_NIM_API_KEY কনফিগার করা আছে কি না যাচাই করুন।";
-            $this->botService->sendMessage($chatId, "⚠️ " . $errorMessage);
+            $this->sendReply($identity, $chatId, "⚠️ " . $errorMessage);
             return;
         }
 
-        // 2. Intent: Retrieve file from vault
+        // 4. Intent: Retrieve file from vault
         if ($interpretation->intent === 'retrieve_file') {
             $query = $interpretation->searchQuery ?: $text;
             $results = $this->vaultService->searchFiles($user, $query, limit: 3);
@@ -314,16 +344,24 @@ class TelegramMessageProcessor
                     } else {
                         $this->botService->sendPhoto($chatId, $path, $caption);
                     }
+
+                    TelegramMessage::create([
+                        'telegram_identity_id' => $identity->id,
+                        'chat_id' => $chatId,
+                        'direction' => 'outbound',
+                        'role' => 'assistant',
+                        'body' => "[File sent: {$match->original_filename}] {$caption}",
+                    ]);
                     return;
                 }
             }
 
             $reply = $interpretation->conversationalReply ?: "আপনার মেমোরি ভল্টে '{$query}' সম্পর্কিত কোনো ফাইল খুঁজে পাওয়া যায়নি।";
-            $this->botService->sendMessage($chatId, $reply);
+            $this->sendReply($identity, $chatId, $reply);
             return;
         }
 
-        // 3. Intent: List reminders
+        // 5. Intent: List reminders
         if ($interpretation->intent === 'list_reminders') {
             $reminders = Reminder::forUser($user->id)
                 ->scheduled()
@@ -332,7 +370,7 @@ class TelegramMessageProcessor
                 ->get();
 
             if ($reminders->isEmpty()) {
-                $this->botService->sendMessage($chatId, "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।");
+                $this->sendReply($identity, $chatId, "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।");
                 return;
             }
 
@@ -344,11 +382,11 @@ class TelegramMessageProcessor
                 $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n\n";
             }
 
-            $this->botService->sendMessage($chatId, trim($list));
+            $this->sendReply($identity, $chatId, trim($list));
             return;
         }
 
-        // 4. Intent: Cancel reminder
+        // 6. Intent: Cancel reminder
         if ($interpretation->intent === 'cancel_reminder') {
             $identifier = $interpretation->targetReminderIdentifier ?? $interpretation->title;
             $qb = Reminder::forUser($user->id)->scheduled();
@@ -359,15 +397,15 @@ class TelegramMessageProcessor
             if ($reminder) {
                 $reminder->markAsCancelled();
                 $reply = $interpretation->conversationalReply ?: "🗑️ '{$reminder->title}' রিমাইন্ডারটি বাতিল করা হয়েছে।";
-                $this->botService->sendMessage($chatId, $reply);
+                $this->sendReply($identity, $chatId, $reply);
             } else {
                 $reply = $interpretation->conversationalReply ?: "বাতিল করার মতো কোনো রিমাইন্ডার পাওয়া যায়নি।";
-                $this->botService->sendMessage($chatId, $reply);
+                $this->sendReply($identity, $chatId, $reply);
             }
             return;
         }
 
-        // 5. Intent: Create reminder
+        // 7. Intent: Create reminder
         if ($interpretation->intent === 'create_reminder' && ! $interpretation->hasMissingInfo) {
             $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
             $time = $interpretation->time ?? '09:00:00';
@@ -393,23 +431,36 @@ class TelegramMessageProcessor
                      "⏰ <b>Due:</b> {$formattedTime} ({$userTz})\n" .
                      "🔁 <b>Recurrence:</b> " . ucfirst($reminder->recurrence);
 
-            $this->botService->sendMessage($chatId, $reply);
+            $this->sendReply($identity, $chatId, $reply);
             return;
         }
 
-        // 6. Clarification question if information is missing
+        // 8. Clarification question if information is missing
         if ($interpretation->hasMissingInfo && $interpretation->clarificationQuestion) {
-            $this->botService->sendMessage($chatId, $interpretation->clarificationQuestion);
+            $this->sendReply($identity, $chatId, $interpretation->clarificationQuestion);
             return;
         }
 
-        // 7. Pure AI-generated conversational reply
+        // 9. Pure AI-generated conversational reply
         if (! empty($interpretation->conversationalReply)) {
-            $this->botService->sendMessage($chatId, $interpretation->conversationalReply);
+            $this->sendReply($identity, $chatId, $interpretation->conversationalReply);
             return;
         }
 
         // Fallback
-        $this->botService->sendMessage($chatId, "আমি আপনার কথাটি বুঝতে পেরেছি। আপনার কোনো রিমাইন্ডার বা সাহায্য প্রয়োজন হলে বলুন।");
+        $this->sendReply($identity, $chatId, "আমি আপনার কথাটি বুঝতে পেরেছি। আপনার কোনো রিমাইন্ডার বা সাহায্য প্রয়োজন হলে বলুন।");
+    }
+
+    protected function sendReply(TelegramIdentity $identity, string $chatId, string $replyText): void
+    {
+        $this->botService->sendMessage($chatId, $replyText);
+
+        TelegramMessage::create([
+            'telegram_identity_id' => $identity->id,
+            'chat_id' => $chatId,
+            'direction' => 'outbound',
+            'role' => 'assistant',
+            'body' => strip_tags($replyText),
+        ]);
     }
 }

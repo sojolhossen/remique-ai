@@ -286,8 +286,22 @@ class WhatsAppMessageProcessor
         $user = $identity->user;
         $userTz = $user->timezone ?? 'Asia/Dhaka';
 
-        // Call NVIDIA NIM service
-        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id);
+        // Fetch recent conversation history
+        $history = WhatsAppMessage::where('whats_app_identity_id', $identity->id)
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->reverse()
+            ->map(fn($m) => [
+                'role' => $m->direction === 'outbound' ? 'assistant' : 'user',
+                'content' => $m->body ?? '',
+            ])
+            ->filter(fn($turn) => ! empty($turn['content']))
+            ->values()
+            ->toArray();
+
+        // Call NVIDIA NIM service with conversation history
+        $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
             $this->apiService->sendText(
@@ -323,7 +337,12 @@ class WhatsAppMessageProcessor
                 $this->executeRetrieveFile($identity, $interpretation);
                 break;
 
+            case 'general_chat':
             default:
+                if (! empty($interpretation->conversationalReply)) {
+                    $this->apiService->sendText($identity->phone_number, $interpretation->conversationalReply);
+                    break;
+                }
                 $this->apiService->sendText(
                     $identity->phone_number,
                     "Hello! I am Remique AI. You can ask me to:\n• Set reminders ('Kal shokal 9 tay meeting')\n• List reminders ('আজকের সব reminder দেখাও')\n• Cancel reminders ('ওই reminder বাতিল করো')\n• Retrieve files ('আমার PDF invoice-টা দাও')"

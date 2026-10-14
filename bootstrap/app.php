@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'whatsapp/webhook',
             'api/whatsapp/webhook',
             'telegram/webhook',
+            'deploy/migrate',
         ]);
 
         $middleware->web(append: [

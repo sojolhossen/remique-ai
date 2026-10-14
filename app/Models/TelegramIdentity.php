@@ -39,6 +39,11 @@ class TelegramIdentity extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function messages(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(TelegramMessage::class, 'telegram_identity_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active' && $this->verified_at !== null;

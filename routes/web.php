@@ -120,3 +120,42 @@ Route::middleware(['auth', 'super_admin'])->prefix('admin')->name('admin.')->gro
     Route::get('/audit-logs', [\App\Http\Controllers\Admin\AuditLogController::class, 'index'])->name('audit.index');
 });
 
+/*
+|--------------------------------------------------------------------------
+| Automated Deployment & Remote Database Migration Webhook
+|--------------------------------------------------------------------------
+| Triggered by GitHub Actions after FTP sync or opened directly with ?token=
+| Executes 'php artisan migrate --force' and clears framework caches.
+*/
+Route::match(['get', 'post'], '/deploy/migrate', function (\Illuminate\Http\Request $request) {
+    $token = $request->input('token') ?? $request->header('X-Deploy-Token');
+    $secret = config('app.deploy_token') ?: env('DEPLOY_TOKEN') ?: env('APP_KEY');
+
+    if (empty($token) || empty($secret) || ! hash_equals((string) $secret, (string) $token)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized deploy token. Please configure DEPLOY_TOKEN in your .env or pass valid token.',
+        ], 403);
+    }
+
+    try {
+        \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        $migrateOutput = \Illuminate\Support\Facades\Artisan::output();
+
+        \Illuminate\Support\Facades\Artisan::call('optimize:clear');
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Database migrations completed successfully!',
+            'database' => config('database.connections.mysql.database'),
+            'tables_migrated' => trim($migrateOutput),
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Migration failed: ' . $e->getMessage(),
+        ], 500);
+    }
+})->name('deploy.migrate');
+

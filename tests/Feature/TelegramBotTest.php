@@ -171,4 +171,95 @@ class TelegramBotTest extends TestCase
         $response->assertSee('Telegram Personal Assistant');
         $response->assertSee('NOT CONNECTED');
     }
+
+    public function test_telegram_maintains_multi_turn_conversation_memory(): void
+    {
+        $user = User::factory()->create(['timezone' => 'Asia/Dhaka']);
+
+        $identity = TelegramIdentity::create([
+            'user_id' => $user->id,
+            'chat_id' => '11223344',
+            'status' => 'active',
+            'verified_at' => now(),
+        ]);
+
+        $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendMessage')->twice()->andReturn(['ok' => true]);
+        $this->app->instance(TelegramBotService::class, $mockBot);
+
+        $mockAi = Mockery::mock(NvidiaNimService::class);
+
+        // Turn 1: user introduces themselves
+        $mockAi->shouldReceive('parseReminderPrompt')
+            ->once()
+            ->withArgs(function ($text, $tz, $userId, $history) {
+                return $text === 'Amar nam Sojol' && empty($history);
+            })
+            ->andReturn(new ReminderInterpretationResult(
+                success: true,
+                intent: 'general_chat',
+                conversationalReply: 'Shunlam Sojol bhai! Kemon achen?'
+            ));
+
+        // Turn 2: user asks a question referring back
+        $mockAi->shouldReceive('parseReminderPrompt')
+            ->once()
+            ->withArgs(function ($text, $tz, $userId, $history) {
+                return $text === 'Amar nam ki mone ache?' &&
+                    count($history) === 2 &&
+                    $history[0]['content'] === 'Amar nam Sojol' &&
+                    $history[1]['content'] === 'Shunlam Sojol bhai! Kemon achen?';
+            })
+            ->andReturn(new ReminderInterpretationResult(
+                success: true,
+                intent: 'general_chat',
+                conversationalReply: 'Haa, apnar nam Sojol!'
+            ));
+
+        $this->app->instance(NvidiaNimService::class, $mockAi);
+
+        // Inbound Turn 1
+        $this->postJson(route('telegram.webhook'), [
+            'update_id' => 201,
+            'message' => [
+                'message_id' => 10,
+                'from' => ['id' => 11223344],
+                'chat' => ['id' => 11223344],
+                'text' => 'Amar nam Sojol',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc'])->assertStatus(200);
+
+        // Inbound Turn 2
+        $this->postJson(route('telegram.webhook'), [
+            'update_id' => 202,
+            'message' => [
+                'message_id' => 11,
+                'from' => ['id' => 11223344],
+                'chat' => ['id' => 11223344],
+                'text' => 'Amar nam ki mone ache?',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc'])->assertStatus(200);
+
+        // Check messages table has both inbound and outbound turns recorded
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_identity_id' => $identity->id,
+            'role' => 'user',
+            'body' => 'Amar nam Sojol',
+        ]);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_identity_id' => $identity->id,
+            'role' => 'assistant',
+            'body' => 'Shunlam Sojol bhai! Kemon achen?',
+        ]);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_identity_id' => $identity->id,
+            'role' => 'user',
+            'body' => 'Amar nam ki mone ache?',
+        ]);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_identity_id' => $identity->id,
+            'role' => 'assistant',
+            'body' => 'Haa, apnar nam Sojol!',
+        ]);
+    }
 }

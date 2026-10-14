@@ -44,7 +44,7 @@ class NvidiaNimService
      * @param int|null $userId User ID for logging metadata
      * @return ReminderInterpretationResult
      */
-    public function parseReminderPrompt(string $userInput, string $userTimezone = 'UTC', ?int $userId = null): ReminderInterpretationResult
+    public function parseReminderPrompt(string $userInput, string $userTimezone = 'UTC', ?int $userId = null, array $conversationHistory = []): ReminderInterpretationResult
     {
         $startTime = hrtime(true);
 
@@ -61,18 +61,30 @@ class NvidiaNimService
         $systemPrompt = $this->buildSystemPrompt($nowInUserTz, $userTimezone);
 
         try {
+            $messages = [
+                [
+                    'role' => 'system',
+                    'content' => $systemPrompt,
+                ],
+            ];
+
+            foreach ($conversationHistory as $turn) {
+                if (! empty($turn['role']) && isset($turn['content']) && $turn['content'] !== '') {
+                    $messages[] = [
+                        'role' => $turn['role'] === 'assistant' ? 'assistant' : 'user',
+                        'content' => (string) $turn['content'],
+                    ];
+                }
+            }
+
+            $messages[] = [
+                'role' => 'user',
+                'content' => $userInput,
+            ];
+
             $payload = [
                 'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => $systemPrompt,
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => $userInput,
-                    ],
-                ],
+                'messages' => $messages,
                 'temperature' => 0.2,
                 'top_p' => 0.9,
                 'max_tokens' => 1024,
@@ -305,6 +317,12 @@ MISSING INFORMATION & CLARIFICATION:
 - For general_chat, provide a warm, empathetic, intelligent conversational reply in "conversational_reply" matching the user's language and tone.
 - DO NOT invent dates or times. If ambiguous, ask for clarification.
 - DO NOT wrap in markdown fences. Output raw JSON only.
+
+MULTI-TURN CONVERSATION MEMORY:
+- You have access to the recent conversation history in the preceding messages.
+- Always remember facts the user shared (their name, topics discussed, preferences, previous questions, details).
+- If the user asks "amar nam ki?", "ami koto bolechi?", "age ki bollam?", or refers back to earlier statements, answer directly using the conversation history.
+- If the user follows up on a previous reminder or question (e.g. "seita kal 10 tay koro", "oi topic ta mone rakho"), resolve it accurately from the earlier turns.
 PROMPT;
     }
 

@@ -5,16 +5,16 @@ namespace App\Services\AI;
 class ReminderInterpretationResult
 {
     public function __construct(
-        public bool $success,
-        public string $intent,
-        public ?string $title,
-        public ?string $description,
-        public ?string $date, // YYYY-MM-DD
-        public ?string $time, // HH:MM:SS
-        public string $priority, // low, medium, high, urgent
-        public string $recurrence, // none, daily, weekly, monthly, yearly
-        public string $detectedLanguage, // bengali, banglish, english, other
-        public bool $hasMissingInfo,
+        public bool $success = true,
+        public string $intent = 'general_chat',
+        public ?string $title = null,
+        public ?string $description = null,
+        public ?string $date = null, // YYYY-MM-DD
+        public ?string $time = null, // HH:MM:SS
+        public string $priority = 'medium', // low, medium, high, urgent
+        public string $recurrence = 'none', // none, daily, weekly, monthly, yearly
+        public string $detectedLanguage = 'bengali', // bengali, banglish, english, other
+        public bool $hasMissingInfo = false,
         public array $missingFields = [],
         public ?string $clarificationQuestion = null,
         public float $confidence = 1.0,
