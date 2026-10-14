@@ -363,7 +363,7 @@ class WhatsAppMessageProcessor
             // Build UTC due_at timestamp
             $date = $result->date ?? Carbon::now($userTz)->toDateString();
             $time = $result->time ?? '09:00:00';
-            $localDateTime = Carbon::createFromFormat('Y-m-d H:i:s', "{$date} {$time}", $userTz);
+            $localDateTime = Carbon::parse("{$date} {$time}", $userTz);
             $utcDueAt = $localDateTime->copy()->setTimezone('UTC');
 
             $reminder = Reminder::create([

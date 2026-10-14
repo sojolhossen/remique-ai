@@ -355,9 +355,10 @@ PROMPT;
             return null;
         }
 
-        // For create_reminder, title is required unless missing info is flagged
-        if ($decoded['intent'] === 'create_reminder' && empty($decoded['title']) && empty($decoded['has_missing_info'])) {
-            return null;
+        // For create_reminder, if title is missing, assign a sensible default title
+        if ($decoded['intent'] === 'create_reminder' && empty($decoded['title'])) {
+            $lang = $decoded['detected_language'] ?? 'bengali';
+            $decoded['title'] = ($lang === 'bengali' || $lang === 'banglish') ? 'রিমাইন্ডার' : 'Reminder';
         }
 
         // Validate date format if provided

@@ -409,7 +409,7 @@ class TelegramMessageProcessor
         if ($interpretation->intent === 'create_reminder' && ! $interpretation->hasMissingInfo) {
             $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
             $time = $interpretation->time ?? '09:00:00';
-            $dueAtInUserTz = Carbon::createFromFormat('Y-m-d H:i:s', "{$date} {$time}", $userTz);
+            $dueAtInUserTz = Carbon::parse("{$date} {$time}", $userTz);
             $dueAtUtc = $dueAtInUserTz->copy()->setTimezone('UTC');
 
             $reminder = Reminder::create([
