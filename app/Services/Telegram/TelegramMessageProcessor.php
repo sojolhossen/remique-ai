@@ -330,11 +330,14 @@ class TelegramMessageProcessor
             }
         }
 
-        // 3. Fetch recent conversation history (last 4 turns for low latency)
+        // 3. Send instant typing action so user sees immediate response
+        $this->botService->sendChatAction($chatId, 'typing');
+
+        // 4. Fetch recent conversation history (last 2 turns for ultra low latency)
         $history = TelegramMessage::where('telegram_identity_id', $identity->id)
             ->where('id', '<', $inbound->id)
             ->latest('id')
-            ->limit(4)
+            ->limit(2)
             ->get()
             ->reverse()
             ->map(fn($m) => [
@@ -344,7 +347,7 @@ class TelegramMessageProcessor
             ->values()
             ->toArray();
 
-        // 4. Direct AI interpretation for ALL user inputs with multi-turn memory
+        // 5. Direct AI interpretation for user inputs with multi-turn memory
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {

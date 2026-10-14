@@ -14,9 +14,9 @@ return [
 
     'base_url' => env('NVIDIA_NIM_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
 
-    'model' => env('NVIDIA_NIM_MODEL', 'openai/gpt-oss-20b'),
+    'model' => env('NVIDIA_NIM_MODEL', 'meta/llama-3.2-11b-vision-instruct'),
 
-    'timeout' => (int) env('NVIDIA_NIM_TIMEOUT', 30),
+    'timeout' => (int) env('NVIDIA_NIM_TIMEOUT', 20),
 
-    'max_retries' => (int) env('NVIDIA_NIM_MAX_RETRIES', 2),
+    'max_retries' => (int) env('NVIDIA_NIM_MAX_RETRIES', 1),
 ];

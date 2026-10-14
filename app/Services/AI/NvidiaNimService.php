@@ -28,9 +28,9 @@ class NvidiaNimService implements AiServiceInterface
     ) {
         $this->apiKey = (string) ($apiKey ?? SystemSetting::get('ai_nvidia_api_key', config('nvidia.api_key', '')));
         $this->baseUrl = rtrim((string) config('nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
-        $this->model = (string) ($model ?? SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'openai/gpt-oss-20b')));
-        $this->timeout = (int) config('nvidia.timeout', 30);
-        $this->maxRetries = (int) config('nvidia.max_retries', 2);
+        $this->model = (string) ($model ?? SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'meta/llama-3.2-11b-vision-instruct')));
+        $this->timeout = (int) config('nvidia.timeout', 20);
+        $this->maxRetries = (int) config('nvidia.max_retries', 1);
     }
 
     /**

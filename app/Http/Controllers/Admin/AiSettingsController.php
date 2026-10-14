@@ -35,10 +35,8 @@ class AiSettingsController extends Controller
             'api_key_masked' => $maskedKey,
             'is_configured' => $this->aiService->isConfigured(),
             'available_models' => config('ai.nvidia.available_models', [
+                'meta/llama-3.2-11b-vision-instruct' => 'Llama 3.2 11B Vision Instruct (Ultra-Fast 1.6s)',
                 'openai/gpt-oss-20b' => 'GPT-OSS-20B (NVIDIA NIM)',
-                'meta/llama-3.1-70b-instruct' => 'Llama 3.1 70B Instruct',
-                'meta/llama-3.1-8b-instruct' => 'Llama 3.1 8B Instruct',
-                'mistralai/mixtral-8x7b-instruct-v0.1' => 'Mixtral 8x7B Instruct',
             ]),
         ];
 

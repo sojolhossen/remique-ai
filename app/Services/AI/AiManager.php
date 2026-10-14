@@ -72,9 +72,8 @@ class AiManager implements AiServiceInterface
                 'name' => 'NVIDIA NIM (OpenAI-compatible)',
                 'description' => 'Enterprise OpenAI-compatible inference with ultra-reliable open-weights models.',
                 'models' => config('ai.nvidia.available_models', [
+                    'meta/llama-3.2-11b-vision-instruct' => 'Llama 3.2 11B Vision Instruct (Ultra-Fast 1.6s)',
                     'openai/gpt-oss-20b' => 'GPT-OSS-20B (NVIDIA NIM)',
-                    'meta/llama-3.1-70b-instruct' => 'Llama 3.1 70B Instruct',
-                    'meta/llama-3.1-8b-instruct' => 'Llama 3.1 8B Instruct',
                 ]),
                 'current_model' => SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'openai/gpt-oss-20b')),
                 'is_configured' => $this->nvidiaService->isConfigured(),
