@@ -7,6 +7,7 @@ use App\Models\Reminder;
 use App\Models\TelegramIdentity;
 use App\Models\TelegramMessage;
 use App\Models\User;
+use App\Models\VaultFile;
 use App\Services\AI\NvidiaNimService;
 use App\Services\ReminderService;
 use App\Services\Vault\VaultService;
@@ -311,7 +312,22 @@ class TelegramMessageProcessor
             'body' => $text,
         ]);
 
-        // 2. Fetch recent conversation history (last 10 turns before current message)
+        // 2. Enrich recently uploaded file if user provides description in follow-up message
+        if (preg_match('/(ছবি|ফাইল|ডকুমেন্ট|রশিদ|নাম|photo|image|doc|slip|receipt|রেখে দাও|সেভ করো|মিষ্টি|বিড়াল)/iu', $text)) {
+            $recentFile = VaultFile::forUser($user->id)
+                ->where('created_at', '>=', Carbon::now()->subMinutes(5))
+                ->latest('id')
+                ->first();
+
+            if ($recentFile && empty($recentFile->caption)) {
+                $recentFile->update([
+                    'caption' => $text,
+                    'search_text' => trim("{$recentFile->search_text} {$text}"),
+                ]);
+            }
+        }
+
+        // 3. Fetch recent conversation history (last 10 turns before current message)
         $history = TelegramMessage::where('telegram_identity_id', $identity->id)
             ->where('id', '<', $inbound->id)
             ->latest('id')
@@ -325,7 +341,7 @@ class TelegramMessageProcessor
             ->values()
             ->toArray();
 
-        // 3. Direct AI interpretation for ALL user inputs with multi-turn memory
+        // 4. Direct AI interpretation for ALL user inputs with multi-turn memory
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
