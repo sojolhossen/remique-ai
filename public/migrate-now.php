@@ -28,8 +28,19 @@ try {
     $out = \Illuminate\Support\Facades\Artisan::output();
     echo "<pre>" . htmlspecialchars($out) . "</pre>";
 
+    $newKey = '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';
+    $model = 'meta/llama-3.2-11b-vision-instruct';
+
+    \App\Models\SystemSetting::set('ai_nvidia_api_key', $newKey);
+    \App\Models\SystemSetting::set('ai_nvidia_model', $model);
+    \App\Models\SystemSetting::set('ai_active_model', $model);
+    \App\Models\SystemSetting::set('ai_active_provider', 'nvidia_nim');
+
     \Illuminate\Support\Facades\Artisan::call('optimize:clear');
-    echo "<p style='color:#4ade80;'><b>✓ Cache cleared and database updated successfully!</b></p>";
+    \Illuminate\Support\Facades\Artisan::call('config:clear');
+
+    echo "<p style='color:#4ade80;'><b>✓ Cache cleared and AI settings synchronized!</b></p>";
+    echo "<p style='color:#4ade80;'><b>✓ Active Model: " . htmlspecialchars($model) . "</b></p>";
     echo "<p><a href='/public/admin/ai' style='color:#38bdf8;'>Go back to AI Engine Settings</a></p>";
 } catch (\Throwable $e) {
     echo "<p style='color:#f87171;'><b>Error: " . htmlspecialchars($e->getMessage()) . "</b></p>";
