@@ -8,7 +8,7 @@
     # Prevent direct access to sensitive configuration files
     RewriteRule ^(\.env|\.git|composer\.(json|lock)|package(-lock)?\.json|phpunit\.xml|artisan) - [F,L]
 
-    # Redirect root subfolder to public/
-    RewriteCond %{REQUEST_URI} !^/remi/public/
-    RewriteRule ^(.*)$ /remi/public/$1 [L,R=301]
+    # Handle Front Controller by internally rewriting to public/
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>
