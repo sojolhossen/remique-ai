@@ -219,19 +219,24 @@ class TelegramMessageProcessor
             return;
         }
 
+        $smartFileName = ! empty($caption)
+            ? \Illuminate\Support\Str::slug(\Illuminate\Support\Str::limit($caption, 35), '_') . '.jpg'
+            : 'Photo_' . Carbon::now()->format('Y-m-d_Hi') . '.jpg';
+
         // Store into Memory Vault
         $vaultFile = $this->vaultService->storeMedia(
             $user,
             $binary,
             'image/jpeg',
-            basename($filePath),
+            $smartFileName,
             $caption
         );
 
         if ($vaultFile) {
+            $displayName = ! empty($vaultFile->caption) ? $vaultFile->caption : $vaultFile->original_filename;
             $this->botService->sendMessage(
                 $chatId,
-                "📁 <b>Photo saved to Memory Vault!</b>\n\n<b>Name:</b> {$vaultFile->original_filename}\n<b>Size:</b> {$vaultFile->formattedSize()}\n\n<i>Ask me anytime: 'Show me my {$vaultFile->category}'</i>"
+                "📁 <b>Photo saved to Memory Vault!</b>\n\n<b>Name:</b> {$displayName}\n<b>Size:</b> {$vaultFile->formattedSize()}\n\n<i>Ask me anytime: 'Show me my {$vaultFile->category}'</i>"
             );
         } else {
             $this->botService->sendMessage(
@@ -338,7 +343,11 @@ class TelegramMessageProcessor
                 $match = $results->first();
                 $path = $this->vaultService->getFilePathForUser($user, $match->id);
                 if ($path && file_exists($path)) {
-                    $caption = "📄 <b>{$match->original_filename}</b>\n\nআপনার মেমোরি ভল্ট থেকে ফাইলটি খুঁজে পাওয়া গেছে!";
+                    $displayName = ! empty($match->caption)
+                        ? $match->caption
+                        : ($match->original_filename !== 'file_0.jpg' ? $match->original_filename : 'সংরক্ষিত ছবি');
+
+                    $caption = "📄 <b>{$displayName}</b>\n\nআপনার মেমোরি ভল্ট থেকে ফাইলটি খুঁজে পাওয়া গেছে!";
                     if ($match->isPdf()) {
                         $this->botService->sendDocument($chatId, $path, $caption);
                     } else {
@@ -350,7 +359,7 @@ class TelegramMessageProcessor
                         'chat_id' => $chatId,
                         'direction' => 'outbound',
                         'role' => 'assistant',
-                        'body' => "[File sent: {$match->original_filename}]",
+                        'body' => "[File sent: {$displayName}]",
                     ]);
                     return;
                 }

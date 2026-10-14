@@ -71,6 +71,7 @@ class TelegramBotService
                 ->post($this->endpoint('sendPhoto'), [
                     'chat_id' => $chatId,
                     'caption' => $caption,
+                    'parse_mode' => 'HTML',
                 ]);
 
             return $response->json() ?? ['ok' => false];
@@ -95,6 +96,7 @@ class TelegramBotService
                 ->post($this->endpoint('sendDocument'), [
                     'chat_id' => $chatId,
                     'caption' => $caption,
+                    'parse_mode' => 'HTML',
                 ]);
 
             return $response->json() ?? ['ok' => false];
