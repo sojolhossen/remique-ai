@@ -64,6 +64,13 @@ MAIL_MAILER=log
 MAIL_FROM_ADDRESS="support@shebafind.site"
 MAIL_FROM_NAME="Remique AI"
 
+# Google Gemini AI Configuration
+GEMINI_API_KEY=AIzaSyD2NN8Jo5m-9FYTNcmsIvzPODVPYlpD2jY
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT=30
+GEMINI_MAX_RETRIES=2
+AI_DEFAULT_PROVIDER=gemini
+
 # NVIDIA NIM AI Configuration
 NVIDIA_NIM_API_KEY=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
 NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
