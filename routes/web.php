@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
 
 // Public landing & Guest Authentication Routes
 Route::get('/', function () {
-    return auth()->check() ? redirect()->route('dashboard') : redirect()->route('login');
+    return auth()->check() ? redirect()->route('dashboard') : view('welcome');
 })->name('home');
 
 Route::middleware('guest')->group(function () {
@@ -26,10 +26,10 @@ Route::middleware('guest')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('register.post');
 
     Route::get('/forgot-password', [PasswordResetController::class, 'showLinkRequestForm'])->name('password.request');
-    Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLinkEmail'])->name('password.email');
+    Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLinkEmail'])->middleware('throttle:5,1')->name('password.email');
 
     Route::get('/reset-password/{token}', [PasswordResetController::class, 'showResetForm'])->name('password.reset');
-    Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('password.update');
+    Route::post('/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:5,1')->name('password.update');
 });
 
 // Authenticated SaaS Dashboard & Reminder Routes
@@ -43,7 +43,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/reminders', [ReminderController::class, 'index'])->name('reminders.index');
     Route::get('/reminders/create', [ReminderController::class, 'create'])->name('reminders.create');
     Route::post('/reminders', [ReminderController::class, 'store'])->name('reminders.store');
-    Route::post('/reminders/ai-interpret', [ReminderController::class, 'interpretAi'])->name('reminders.ai-interpret');
+    Route::post('/reminders/ai-interpret', [ReminderController::class, 'interpretAi'])->middleware('throttle:30,1')->name('reminders.ai-interpret');
 
     Route::get('/reminders/{reminder}/edit', [ReminderController::class, 'edit'])->name('reminders.edit');
     Route::put('/reminders/{reminder}', [ReminderController::class, 'update'])->name('reminders.update');
@@ -66,7 +66,7 @@ Route::middleware(['auth'])->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::get('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhookController::class, 'verify'])->name('whatsapp.webhook.verify');
-Route::post('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhookController::class, 'handle'])->name('whatsapp.webhook.handle');
+Route::post('/whatsapp/webhook', [\App\Http\Controllers\WhatsApp\WhatsAppWebhookController::class, 'handle'])->middleware('throttle:120,1')->name('whatsapp.webhook.handle');
 
 /*
 |--------------------------------------------------------------------------

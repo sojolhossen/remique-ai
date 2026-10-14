@@ -10,6 +10,7 @@ use App\Services\AI\NvidiaNimService;
 use App\Services\Vault\VaultService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 
 class WhatsAppMessageProcessor
 {
@@ -148,6 +149,21 @@ class WhatsAppMessageProcessor
 
     protected function handlePendingVerification(WhatsAppIdentity $identity, array $rawMessage): void
     {
+        $throttleKey = 'whatsapp_verify:' . $identity->id;
+
+        // Check if identity is currently locked due to too many failed attempts
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            $minutes = max(1, (int) ceil($seconds / 60));
+            Log::warning("WhatsApp verification brute-force attempt blocked for identity {$identity->id} ({$identity->phone_number})");
+
+            $this->apiService->sendText(
+                $identity->phone_number,
+                "⚠️ Too many failed verification attempts. Verification is locked for {$minutes} minutes for security. Please contact your administrator."
+            );
+            return;
+        }
+
         $text = trim($this->extractBody($rawMessage) ?? '');
 
         // Extract OTP or token from message
@@ -162,6 +178,8 @@ class WhatsAppMessageProcessor
             $identity->verification_expires_at &&
             $identity->verification_expires_at->isFuture()
         ) {
+            RateLimiter::clear($throttleKey);
+
             $identity->update([
                 'status' => 'active',
                 'verified_at' => Carbon::now(),
@@ -184,10 +202,28 @@ class WhatsAppMessageProcessor
                 "✅ Your WhatsApp number is now verified! Welcome to Remique.\n\nYou can set reminders in Bengali, Banglish, or English (e.g. 'Kal shokal 9 tay meeting') or send files to store in your private Memory Vault."
             );
         } else {
-            $this->apiService->sendText(
-                $identity->phone_number,
-                "⚠️ Verification failed. The code provided is invalid or has expired. Please contact your administrator for a new verification code."
-            );
+            RateLimiter::hit($throttleKey, 3600); // 1 hour window
+            $remaining = RateLimiter::remaining($throttleKey, 5);
+
+            if ($remaining <= 0) {
+                AuditLog::record(
+                    'whatsapp.verification_locked',
+                    $identity,
+                    'WhatsApp identity verification locked due to excessive failed attempts',
+                    ['phone_number' => $identity->phone_number],
+                    $identity->user_id
+                );
+
+                $this->apiService->sendText(
+                    $identity->phone_number,
+                    "⚠️ Too many failed attempts. Account verification is locked for 60 minutes for security. Please contact your administrator."
+                );
+            } else {
+                $this->apiService->sendText(
+                    $identity->phone_number,
+                    "⚠️ Verification failed. The code provided is invalid or has expired ({$remaining} attempts remaining). Please contact your administrator for a new verification code."
+                );
+            }
         }
     }
 

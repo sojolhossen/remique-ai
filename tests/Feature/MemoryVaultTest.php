@@ -25,7 +25,7 @@ class MemoryVaultTest extends TestCase
     public function test_user_can_store_supported_image(): void
     {
         $user = User::factory()->create();
-        $fakeImageContent = 'FAKE_JPEG_BINARY_DATA_123';
+        $fakeImageContent = "\xFF\xD8\xFF\xE0\x00\x10JFIF" . 'FAKE_JPEG_BINARY_DATA_123';
 
         $file = $this->vaultService->storeMedia(
             $user,
@@ -83,13 +83,29 @@ class MemoryVaultTest extends TestCase
         $this->assertEquals(0, VaultFile::count());
     }
 
+    public function test_disguised_script_in_image_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $fakeMalicious = "<?php phpinfo(); ?>\xFF\xD8\xFF";
+
+        $file = $this->vaultService->storeMedia(
+            $user,
+            $fakeMalicious,
+            'image/jpeg',
+            'exploit.jpg'
+        );
+
+        $this->assertNull($file);
+        $this->assertEquals(0, VaultFile::count());
+    }
+
     public function test_natural_language_search_finds_file_by_topic(): void
     {
         $user = User::factory()->create();
 
         $file1 = $this->vaultService->storeMedia(
             $user,
-            'binary1',
+            "\xFF\xD8\xFF" . 'binary1',
             'image/jpeg',
             'IMG_001.jpg',
             'Photo of Sony WH-1000XM5 headphones'
@@ -97,7 +113,7 @@ class MemoryVaultTest extends TestCase
 
         $file2 = $this->vaultService->storeMedia(
             $user,
-            'binary2',
+            "%PDF-1.4 " . 'binary2',
             'application/pdf',
             'tax_certificate_2025.pdf',
             'Government Tax Return'
@@ -121,7 +137,7 @@ class MemoryVaultTest extends TestCase
 
         $fileA = $this->vaultService->storeMedia(
             $userA,
-            'secretA',
+            "\x89PNG\r\n\x1a\n" . 'secretA',
             'image/png',
             'passport_scan.png',
             'National ID Scan'

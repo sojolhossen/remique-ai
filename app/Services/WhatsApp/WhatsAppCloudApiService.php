@@ -389,4 +389,13 @@ class WhatsAppCloudApiService
     {
         return ltrim(preg_replace('/[^\d]/', '', $number), '+');
     }
+
+    /**
+     * Check if WhatsApp Cloud API credentials are configured.
+     */
+    public function isConfigured(): bool
+    {
+        return ! empty($this->phoneNumberId) && ! empty($this->accessToken);
+    }
 }
+

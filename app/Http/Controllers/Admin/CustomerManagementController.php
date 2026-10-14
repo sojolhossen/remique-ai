@@ -26,7 +26,7 @@ class CustomerManagementController extends Controller
         $status = $request->get('status', '');
 
         $query = User::where('role', 'customer')
-            ->with(['whatsappIdentities', 'reminders', 'vaultFiles'])
+            ->with(['whatsappIdentities'])
             ->withCount(['reminders', 'vaultFiles']);
 
         if (! empty($search)) {

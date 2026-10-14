@@ -24,6 +24,11 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>@yield('title', 'Dashboard') — Remi AI Reminder</title>
+    <meta name="description" content="Remique is an enterprise-grade AI WhatsApp personal assistant supporting natural language reminders, multilingual Bengali/Banglish/English understanding, and secure private document vaults.">
+    <meta name="keywords" content="AI reminders, WhatsApp assistant, personal memory vault, Bengali AI, Banglish reminders, smart scheduling">
+    <meta property="og:title" content="Remique — Intelligent AI WhatsApp Reminder & Personal Vault">
+    <meta property="og:description" content="Natural language reminders and secure personal memory vault powered by NVIDIA NIM on WhatsApp.">
+    <meta property="og:type" content="website">
 
     <!-- Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -173,7 +178,7 @@
                     </div>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
-                        <button type="submit" title="Logout" class="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                        <button type="submit" title="Logout" aria-label="Log out of account" class="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
                             </svg>
@@ -189,7 +194,7 @@
             <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
                 <div class="flex items-center gap-3">
                     <!-- Hamburger button for mobile -->
-                    <button @click="sidebarOpen = true" class="lg:hidden p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                    <button @click="sidebarOpen = true" aria-label="Open navigation menu" class="lg:hidden p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                         </svg>
@@ -213,6 +218,8 @@
                     <button @click="toggleTheme()"
                             type="button"
                             class="p-2 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            aria-label="Toggle color theme"
+                            :aria-label="darkMode ? 'Switch to light mode' : 'Switch to dark mode'"
                             :title="darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
                         <!-- Sun icon -->
                         <svg x-show="darkMode" x-cloak class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -234,14 +241,14 @@
             <!-- Flash Status Messages -->
             <div class="px-4 sm:px-6 pt-4">
                 @if (session('status'))
-                    <div x-data="{ show: true }" x-show="show" class="mb-4 flex items-center justify-between p-3.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-sm">
+                    <div x-data="{ show: true }" x-show="show" role="alert" class="mb-4 flex items-center justify-between p-3.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-sm">
                         <div class="flex items-center gap-2">
                             <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
                             <span>{{ session('status') }}</span>
                         </div>
-                        <button @click="show = false" class="text-emerald-600 dark:text-emerald-400 hover:opacity-75">
+                        <button @click="show = false" aria-label="Dismiss alert" class="text-emerald-600 dark:text-emerald-400 hover:opacity-75">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>

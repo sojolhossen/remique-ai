@@ -16,6 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/whatsapp/webhook',
         ]);
 
+        $middleware->web(append: [
+            \App\Http\Middleware\SecurityHeadersMiddleware::class,
+        ]);
+
         $middleware->alias([
             'super_admin' => \App\Http\Middleware\EnsureUserIsSuperAdmin::class,
         ]);

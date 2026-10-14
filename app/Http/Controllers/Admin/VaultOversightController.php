@@ -25,18 +25,6 @@ class VaultOversightController extends Controller
         // Global metrics
         $globalMetrics = $this->vaultService->getGlobalStorageMetrics();
 
-        // Top storage users
-        $topUsers = User::where('role', 'customer')
-            ->withCount('vaultFiles')
-            ->has('vaultFiles')
-            ->get()
-            ->map(function ($u) {
-                $u->storage_bytes = $this->vaultService->getUserStorageUsage($u);
-                return $u;
-            })
-            ->sortByDesc('storage_bytes')
-            ->take(5);
-
         // Paginated files metadata
         $query = VaultFile::with('user');
 
@@ -58,7 +46,7 @@ class VaultOversightController extends Controller
 
         $files = $query->orderByDesc('created_at')->paginate(20)->withQueryString();
 
-        return view('admin.vault.index', compact('globalMetrics', 'topUsers', 'files', 'search', 'mime'));
+        return view('admin.vault.index', compact('globalMetrics', 'files', 'search', 'mime'));
     }
 
     public function deleteFile(Request $request, VaultFile $file): RedirectResponse

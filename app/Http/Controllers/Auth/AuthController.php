@@ -60,6 +60,7 @@ class AuthController extends Controller
             'name' => trim($request->name),
             'email' => strtolower(trim($request->email)),
             'password' => Hash::make($request->password),
+            'role' => 'customer',
             'status' => 'active',
             'preferred_language' => $request->preferred_language ?: 'en',
             'timezone' => $request->timezone ?: 'UTC',

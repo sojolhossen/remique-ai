@@ -53,16 +53,24 @@ class VaultService
             return null;
         }
 
-        // 3. Compute SHA-256 checksum
+        // 3. Validate magic bytes / file signature to prevent MIME spoofing
+        if (! $this->validateMagicBytes($binaryContents, $mimeType)) {
+            Log::warning("Vault rejected file with invalid magic bytes for MIME {$mimeType} for user {$user->id}");
+            return null;
+        }
+
+        // 4. Compute SHA-256 checksum
         $checksum = hash('sha256', $binaryContents);
 
-        // 4. Generate opaque storage key (never use client-supplied filename for filesystem path)
+        // 5. Generate opaque storage key (never use client-supplied filename for filesystem path)
         $extension = self::ALLOWED_MIME_TYPES[$mimeType];
         $opaqueFilename = Str::uuid()->toString() . '.' . $extension;
         $relativePath = "vault/{$user->id}/{$opaqueFilename}";
 
-        // 5. Clean original filename for display
-        $cleanOriginalName = $originalFilename ? basename(preg_replace('/[^a-zA-Z0-9_\-\. ]/', '', $originalFilename)) : "file_{$opaqueFilename}";
+        // 6. Clean original filename for display (strictly strip path traversal, null bytes, and non-printable characters)
+        $cleanOriginalName = $originalFilename
+            ? basename(str_replace(["\0", '..', '/', '\\'], '', preg_replace('/[^a-zA-Z0-9_\-\. ]/', '', $originalFilename)))
+            : "file_{$opaqueFilename}";
 
         try {
             // Write to private local disk
@@ -260,4 +268,36 @@ class VaultService
         }
         return $bytes . ' B';
     }
+
+    /**
+     * Validate that binary file contents match authentic magic byte signatures.
+     */
+    public function validateMagicBytes(string $binaryContents, string $mimeType): bool
+    {
+        if (strlen($binaryContents) < 4) {
+            return false;
+        }
+
+        // Strictly reject embedded executable, PHP, HTML script, or SVG vector payload markers
+        $lowerPrefix = strtolower(substr($binaryContents, 0, 512));
+        if (
+            str_contains($lowerPrefix, '<?php') ||
+            str_contains($lowerPrefix, '<?=') ||
+            str_contains($lowerPrefix, '<script') ||
+            str_contains($lowerPrefix, '<svg') ||
+            str_contains($lowerPrefix, '<html')
+        ) {
+            Log::warning("Vault rejected payload containing executable script or SVG markers.");
+            return false;
+        }
+
+        return match ($mimeType) {
+            'image/jpeg' => str_starts_with($binaryContents, "\xFF\xD8\xFF"),
+            'image/png' => str_starts_with($binaryContents, "\x89PNG\r\n\x1a\n") || str_starts_with($binaryContents, "\x89PNG"),
+            'image/webp' => str_starts_with($binaryContents, "RIFF") && substr($binaryContents, 8, 4) === "WEBP",
+            'application/pdf' => str_starts_with($binaryContents, "%PDF-"),
+            default => false,
+        };
+    }
 }
+

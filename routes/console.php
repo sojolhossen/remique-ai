@@ -11,3 +11,8 @@ Artisan::command('inspire', function () {
     ->everyMinute()
     ->withoutOverlapping(5);
 
+\Illuminate\Support\Facades\Schedule::command('remi:backup --verify --keep=7')
+    ->dailyAt('02:00')
+    ->withoutOverlapping(15);
+
+

@@ -39,6 +39,15 @@ class WhatsAppIdentity extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (WhatsAppIdentity $identity) {
+            if ($identity->phone_number) {
+                $identity->phone_number = static::normalizePhoneNumber($identity->phone_number);
+            }
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
