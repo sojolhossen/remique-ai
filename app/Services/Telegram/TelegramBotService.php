@@ -162,4 +162,41 @@ class TelegramBotService
             return ['ok' => false, 'description' => $e->getMessage()];
         }
     }
+
+    /**
+     * Delete active webhook (required before polling).
+     */
+    public function deleteWebhook(): array
+    {
+        try {
+            $response = Http::timeout($this->timeout)->post($this->endpoint('deleteWebhook'));
+            return $response->json() ?? ['ok' => false];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'description' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Fetch pending updates via long-polling (useful for local development).
+     */
+    public function getUpdates(int $offset = 0, int $limit = 20, int $timeout = 10): array
+    {
+        if (! $this->isConfigured()) {
+            return [];
+        }
+
+        try {
+            $response = Http::timeout($timeout + 5)->get($this->endpoint('getUpdates'), [
+                'offset' => $offset,
+                'limit' => $limit,
+                'timeout' => $timeout,
+            ]);
+
+            $json = $response->json();
+            return ($json['ok'] ?? false) ? ($json['result'] ?? []) : [];
+        } catch (\Throwable $e) {
+            Log::error('Telegram getUpdates failed: ' . $e->getMessage());
+            return [];
+        }
+    }
 }
