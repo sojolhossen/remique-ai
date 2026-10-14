@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiInteractionLog;
 use App\Models\AuditLog;
 use App\Models\SystemSetting;
-use App\Services\AI\AiManager;
+use App\Services\AI\NvidiaNimService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,13 +15,32 @@ use Illuminate\View\View;
 class AiSettingsController extends Controller
 {
     public function __construct(
-        protected AiManager $aiManager
+        protected NvidiaNimService $aiService
     ) {}
 
     public function index(): View
     {
-        $activeProvider = $this->aiManager->getActiveProvider();
-        $providers = $this->aiManager->getAvailableProviders();
+        $currentModel = SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'openai/gpt-oss-20b'));
+        $apiKey = SystemSetting::get('ai_nvidia_api_key', config('nvidia.api_key', ''));
+        $maskedKey = ! empty($apiKey)
+            ? substr($apiKey, 0, 6) . '••••••••' . substr($apiKey, -4)
+            : 'Not Configured';
+
+        $config = [
+            'provider' => 'NVIDIA NIM (OpenAI-compatible)',
+            'base_url' => config('nvidia.base_url', 'https://integrate.api.nvidia.com/v1'),
+            'model' => $currentModel,
+            'timeout' => config('nvidia.timeout', 30),
+            'max_retries' => config('nvidia.max_retries', 2),
+            'api_key_masked' => $maskedKey,
+            'is_configured' => $this->aiService->isConfigured(),
+            'available_models' => config('ai.nvidia.available_models', [
+                'openai/gpt-oss-20b' => 'GPT-OSS-20B (NVIDIA NIM)',
+                'meta/llama-3.1-70b-instruct' => 'Llama 3.1 70B Instruct',
+                'meta/llama-3.1-8b-instruct' => 'Llama 3.1 8B Instruct',
+                'mistralai/mixtral-8x7b-instruct-v0.1' => 'Mixtral 8x7B Instruct',
+            ]),
+        ];
 
         // Diagnostic analytics from logs
         $totalLogs = AiInteractionLog::count();
@@ -39,8 +58,7 @@ class AiSettingsController extends Controller
         $recentLogs = AiInteractionLog::orderByDesc('created_at')->limit(15)->get();
 
         return view('admin.ai.index', compact(
-            'activeProvider',
-            'providers',
+            'config',
             'totalLogs',
             'successfulLogs',
             'failedLogs',
@@ -52,50 +70,30 @@ class AiSettingsController extends Controller
     }
 
     /**
-     * Update active provider and model preferences.
+     * Update NVIDIA model preferences.
      */
     public function updateSettings(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'active_provider' => 'required|in:gemini,nvidia_nim',
-            'gemini_model' => 'nullable|string|max:100',
-            'nvidia_model' => 'nullable|string|max:100',
-            'gemini_api_key' => 'nullable|string|max:255',
+            'nvidia_model' => 'required|string|max:100',
             'nvidia_api_key' => 'nullable|string|max:255',
         ]);
 
-        $provider = $validated['active_provider'];
-        SystemSetting::set('ai_active_provider', $provider);
-
-        if (! empty($validated['gemini_model'])) {
-            SystemSetting::set('ai_gemini_model', $validated['gemini_model']);
-        }
-
-        if (! empty($validated['nvidia_model'])) {
-            SystemSetting::set('ai_nvidia_model', $validated['nvidia_model']);
-        }
-
-        if (! empty($validated['gemini_api_key'])) {
-            SystemSetting::set('ai_gemini_api_key', trim($validated['gemini_api_key']));
-        }
+        SystemSetting::set('ai_active_provider', 'nvidia_nim');
+        SystemSetting::set('ai_nvidia_model', $validated['nvidia_model']);
+        SystemSetting::set('ai_active_model', $validated['nvidia_model']);
 
         if (! empty($validated['nvidia_api_key'])) {
             SystemSetting::set('ai_nvidia_api_key', trim($validated['nvidia_api_key']));
         }
 
-        $activeModel = $provider === 'gemini'
-            ? SystemSetting::get('ai_gemini_model', config('ai.gemini.model', 'gemini-2.5-flash'))
-            : SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'openai/gpt-oss-20b'));
-
-        SystemSetting::set('ai_active_model', $activeModel);
-
         AuditLog::record(
             'ai.settings_updated',
-            'AiManager',
-            "Active AI provider switched to {$provider} ({$activeModel})",
+            'NvidiaNimService',
+            "NVIDIA NIM model updated to {$validated['nvidia_model']}",
             [
-                'active_provider' => $provider,
-                'active_model' => $activeModel,
+                'active_provider' => 'nvidia_nim',
+                'active_model' => $validated['nvidia_model'],
             ],
             auth()->id()
         );
@@ -103,29 +101,24 @@ class AiSettingsController extends Controller
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => "AI Engine updated! Active provider: {$provider} ({$activeModel})",
-                'active_provider' => $provider,
-                'active_model' => $activeModel,
+                'message' => "AI Engine updated! Active model: {$validated['nvidia_model']}",
+                'active_model' => $validated['nvidia_model'],
             ]);
         }
 
-        return redirect()->route('admin.ai.index')->with('status', "AI Engine updated! Active provider: {$provider} ({$activeModel})");
+        return redirect()->route('admin.ai.index')->with('status', "AI Engine updated! Active model: {$validated['nvidia_model']}");
     }
 
     /**
-     * Test live health / connectivity for any model or provider.
+     * Test live health / connectivity for NVIDIA NIM model.
      */
     public function testModel(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'provider' => 'required|in:gemini,nvidia_nim',
             'model' => 'nullable|string|max:100',
         ]);
 
-        $result = $this->aiManager->testConnection(
-            $validated['model'] ?? null,
-            $validated['provider']
-        );
+        $result = $this->aiService->testConnection($validated['model'] ?? null);
 
         return response()->json($result);
     }
@@ -138,22 +131,18 @@ class AiSettingsController extends Controller
         $validated = $request->validate([
             'prompt' => 'required|string|max:1000',
             'timezone' => 'nullable|string|timezone',
-            'provider' => 'nullable|in:gemini,nvidia_nim',
         ]);
 
         $tz = $validated['timezone'] ?? auth()->user()->timezone ?? 'Asia/Dhaka';
-        $provider = $validated['provider'] ?? $this->aiManager->getActiveProvider();
-        $service = $this->aiManager->getProviderService($provider);
-
-        $result = $service->parseReminderPrompt($validated['prompt'], $tz, auth()->id());
+        $result = $this->aiService->parseReminderPrompt($validated['prompt'], $tz, auth()->id());
 
         AuditLog::record(
             'ai.playground_tested',
-            $service->getProviderName(),
-            "Super Admin tested in AI playground using {$service->getProviderName()} ({$service->getModelName()})",
+            'NvidiaNimService',
+            "Super Admin tested in AI playground using NVIDIA NIM ({$this->aiService->getModelName()})",
             [
-                'provider' => $service->getProviderName(),
-                'model' => $service->getModelName(),
+                'provider' => 'nvidia_nim',
+                'model' => $this->aiService->getModelName(),
                 'intent' => $result->intent,
                 'success' => $result->success,
                 'duration_ms' => $result->durationMs,
@@ -162,8 +151,8 @@ class AiSettingsController extends Controller
         );
 
         $responseArray = $result->toArray();
-        $responseArray['provider'] = $service->getProviderName();
-        $responseArray['model'] = $service->getModelName();
+        $responseArray['provider'] = 'nvidia_nim';
+        $responseArray['model'] = $this->aiService->getModelName();
 
         return response()->json($responseArray);
     }

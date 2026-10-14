@@ -6,28 +6,10 @@ return [
     | Default AI Provider
     |--------------------------------------------------------------------------
     |
-    | Supported: "gemini", "nvidia_nim"
+    | Supported: "nvidia_nim"
     |
     */
-    'default_provider' => env('AI_DEFAULT_PROVIDER', 'gemini'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Google Gemini Configuration
-    |--------------------------------------------------------------------------
-    */
-    'gemini' => [
-        'api_key' => env('GEMINI_API_KEY', 'AIzaSyD2NN8Jo5m-9FYTNcmsIvzPODVPYlpD2jY'),
-        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
-        'timeout' => (int) env('GEMINI_TIMEOUT', 30),
-        'max_retries' => (int) env('GEMINI_MAX_RETRIES', 2),
-        'available_models' => [
-            'gemini-2.5-flash' => 'Gemini 2.5 Flash (Ultra Fast & Recommended)',
-            'gemini-2.5-flash-lite' => 'Gemini 2.5 Flash-Lite (Lightweight)',
-            'gemini-flash-latest' => 'Gemini Flash Latest',
-            'gemini-3-flash-preview' => 'Gemini 3 Flash Preview',
-        ],
-    ],
+    'default_provider' => env('AI_DEFAULT_PROVIDER', 'nvidia_nim'),
 
     /*
     |--------------------------------------------------------------------------
