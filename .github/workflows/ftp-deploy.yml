@@ -3,8 +3,7 @@ name: Deploy via FTP
 on:
   push:
     branches:
-      - main
-      - master
+      - main # যে branch থেকে deploy করতে চান
 
 jobs:
   web-deploy:
@@ -16,36 +15,15 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build Frontend Assets
-        run: |
-          npm ci || npm install
-          npm run build
-
       - name: Sync files via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ./
+          server-dir: ./ # আপনার সার্ভারের পাথ
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
             vendor/**
-            tests/**
-            .env
-            .env.example
-            phpunit.xml
-            README.md
-
-      - name: Run Remote Database Migrations
-        if: ${{ secrets.LIVE_SITE_URL != '' && secrets.DEPLOY_TOKEN != '' }}
-        run: |
-          echo "Triggering live database migration on ${{ secrets.LIVE_SITE_URL }}..."
-          curl -s -X POST "${{ secrets.LIVE_SITE_URL }}/deploy/migrate?token=${{ secrets.DEPLOY_TOKEN }}" || true
