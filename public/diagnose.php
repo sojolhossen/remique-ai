@@ -45,17 +45,12 @@ try {
     $response = $kernel->handle($request);
     echo "HTTP Status Code: " . $response->getStatusCode() . "\n";
     if ($response->getStatusCode() !== 200) {
-        $content = $response->getContent();
-        if (preg_match('/<title>(.*?)<\/title>/is', $content, $m)) {
-            echo "Response Title: " . trim($m[1]) . "\n";
-        }
-        // Extract exception message if present in html
-        if (preg_match('/class="exception_title">(.*?)<\/span>/is', $content, $m)) {
-            echo "Exception: " . trim(strip_tags($m[1])) . "\n";
-        }
-        if (preg_match('/class="exception_message">(.*?)<\/span>/is', $content, $m)) {
-            echo "Message: " . trim(strip_tags($m[1])) . "\n";
-        }
+        $html = $response->getContent();
+        // Remove HTML tags to read clean error text
+        $plain = strip_tags($html);
+        $cleanLines = array_filter(array_map('trim', explode("\n", $plain)));
+        echo "\n--- First 15 error lines ---\n";
+        echo implode("\n", array_slice($cleanLines, 0, 15)) . "\n";
     } else {
         echo "✓ Homepage returned HTTP 200 OK!\n";
     }
