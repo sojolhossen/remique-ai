@@ -154,4 +154,67 @@ class Reminder extends Model
 
         return $this->save();
     }
+
+    /**
+     * Convert English digits to Bengali digits.
+     */
+    public static function toBanglaNumber(int|string $number): string
+    {
+        $en = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        $bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+        return str_replace($en, $bn, (string) $number);
+    }
+
+    /**
+     * Get human-readable time remaining before due_at in Bengali, Banglish, or English.
+     */
+    public function getTimeRemainingFormatted(string $lang = 'english', ?string $timezone = 'Asia/Dhaka'): string
+    {
+        $now = Carbon::now('UTC');
+        $due = $this->due_at->copy()->setTimezone('UTC');
+
+        $isOverdue = $due->isPast();
+        $diffSeconds = abs($now->diffInSeconds($due));
+
+        $days = (int) floor($diffSeconds / 86400);
+        $hours = (int) floor(($diffSeconds % 86400) / 3600);
+        $minutes = (int) floor(($diffSeconds % 3600) / 60);
+
+        $parts = [];
+        if ($days > 0) {
+            $parts[] = match ($lang) {
+                'bengali' => self::toBanglaNumber($days) . ' দিন',
+                'banglish' => "{$days} din",
+                default => "{$days} " . ($days > 1 ? 'days' : 'day'),
+            };
+        }
+        if ($hours > 0) {
+            $parts[] = match ($lang) {
+                'bengali' => self::toBanglaNumber($hours) . ' ঘণ্টা',
+                'banglish' => "{$hours} ghonta",
+                default => "{$hours} " . ($hours > 1 ? 'hours' : 'hour'),
+            };
+        }
+        if ($minutes > 0 || empty($parts)) {
+            $effectiveMinutes = max(1, $minutes);
+            $parts[] = match ($lang) {
+                'bengali' => self::toBanglaNumber($effectiveMinutes) . ' মিনিট',
+                'banglish' => "{$effectiveMinutes} minute",
+                default => "{$effectiveMinutes} " . ($effectiveMinutes > 1 ? 'minutes' : 'minute'),
+            };
+        }
+
+        $formattedTime = implode(' ', array_slice($parts, 0, 2));
+
+        if ($isOverdue) {
+            return match ($lang) {
+                'bengali' => "⚠️ {$formattedTime} আগে পার হয়ে গেছে (বিলম্বে আছে)",
+                'banglish' => "⚠️ {$formattedTime} age par hoye geche (Overdue)",
+                default => "⚠️ Overdue by {$formattedTime}",
+            };
+        }
+
+        return $formattedTime;
+    }
 }
+

@@ -8,7 +8,7 @@ use App\Models\VaultFile;
 use App\Services\AI\NvidiaNimService;
 use App\Services\AI\ReminderInterpretationResult;
 use App\Services\Telegram\TelegramBotService;
-use App\Services\Vault\VaultService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -264,4 +264,194 @@ class TelegramBotTest extends TestCase
             'body' => 'Haa, apnar nam Sojol!',
         ]);
     }
+
+    public function test_telegram_shows_time_remaining_when_listing_reminders(): void
+    {
+        $user = User::factory()->create(['timezone' => 'Asia/Dhaka']);
+
+        TelegramIdentity::create([
+            'user_id' => $user->id,
+            'chat_id' => '778899',
+            'status' => 'active',
+            'verified_at' => now(),
+        ]);
+
+        // Create a scheduled reminder due in 2 hours
+        \App\Models\Reminder::create([
+            'user_id' => $user->id,
+            'title' => 'Upload video to YouTube',
+            'due_at' => Carbon::now('UTC')->addHours(2),
+            'status' => \App\Models\Reminder::STATUS_SCHEDULED,
+        ]);
+
+        $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
+        $mockBot->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(function ($chatId, $text) {
+                return $chatId === '778899' &&
+                    str_contains($text, 'Upload video to YouTube') &&
+                    (str_contains($text, 'Baki ache') || str_contains($text, 'Remaining') || str_contains($text, 'বাকি আছে'));
+            })
+            ->andReturn(['ok' => true]);
+        $this->app->instance(TelegramBotService::class, $mockBot);
+
+        // Send "Reminder list"
+        $response = $this->postJson(route('telegram.webhook'), [
+            'update_id' => 301,
+            'message' => [
+                'message_id' => 30,
+                'from' => ['id' => 778899],
+                'chat' => ['id' => 778899],
+                'text' => 'Reminder list',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc']);
+
+        $response->assertStatus(200);
+    }
+
+    public function test_telegram_shows_time_remaining_when_creating_reminder(): void
+    {
+        $user = User::factory()->create(['timezone' => 'Asia/Dhaka']);
+
+        TelegramIdentity::create([
+            'user_id' => $user->id,
+            'chat_id' => '556677',
+            'status' => 'active',
+            'verified_at' => now(),
+        ]);
+
+        $futureDate = Carbon::now('Asia/Dhaka')->addDays(1)->toDateString();
+
+        $mockAi = Mockery::mock(NvidiaNimService::class);
+        $mockAi->shouldReceive('parseReminderPrompt')
+            ->once()
+            ->andReturn(new ReminderInterpretationResult(
+                success: true,
+                intent: 'create_reminder',
+                title: 'Team Standup',
+                description: null,
+                date: $futureDate,
+                time: '10:00:00',
+                priority: 'medium',
+                recurrence: 'none',
+                detectedLanguage: 'bengali',
+                hasMissingInfo: false
+            ));
+        $this->app->instance(NvidiaNimService::class, $mockAi);
+
+        $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
+        $mockBot->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(function ($chatId, $text) {
+                return $chatId === '556677' &&
+                    str_contains($text, 'Team Standup') &&
+                    str_contains($text, 'বাকি আছে');
+            })
+            ->andReturn(['ok' => true]);
+        $this->app->instance(TelegramBotService::class, $mockBot);
+
+        $response = $this->postJson(route('telegram.webhook'), [
+            'update_id' => 302,
+            'message' => [
+                'message_id' => 31,
+                'from' => ['id' => 556677],
+                'chat' => ['id' => 556677],
+                'text' => 'কাল সকাল ১০টায় টিম মিটিং',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc']);
+
+        $response->assertStatus(200);
+    }
+
+    public function test_web_cron_endpoint_executes_due_reminders(): void
+    {
+        $response = $this->getJson(route('cron.reminders'));
+        $response->assertStatus(200);
+        $response->assertJson(['status' => 'success']);
+    }
+
+    public function test_telegram_fast_paths_common_acknowledgments_without_ai(): void
+    {
+        $user = User::factory()->create(['timezone' => 'Asia/Dhaka']);
+
+        TelegramIdentity::create([
+            'user_id' => $user->id,
+            'chat_id' => '112299',
+            'status' => 'active',
+            'verified_at' => now(),
+        ]);
+
+        // Mock AI to ensure it is NEVER called for "Okay"
+        $mockAi = Mockery::mock(NvidiaNimService::class);
+        $mockAi->shouldReceive('parseReminderPrompt')->never();
+        $this->app->instance(NvidiaNimService::class, $mockAi);
+
+        $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
+        $mockBot->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(function ($chatId, $text) {
+                return $chatId === '112299' && (str_contains($text, 'Thik ache') || str_contains($text, 'Sure thing') || str_contains($text, 'ঠিক আছে'));
+            })
+            ->andReturn(['ok' => true]);
+        $this->app->instance(TelegramBotService::class, $mockBot);
+
+        $response = $this->postJson(route('telegram.webhook'), [
+            'update_id' => 401,
+            'message' => [
+                'message_id' => 41,
+                'from' => ['id' => 112299],
+                'chat' => ['id' => 112299],
+                'text' => 'Okay',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc']);
+
+        $response->assertStatus(200);
+    }
+
+    public function test_telegram_webhook_deduplicates_retried_updates(): void
+    {
+        $user = User::factory()->create(['timezone' => 'Asia/Dhaka']);
+
+        TelegramIdentity::create([
+            'user_id' => $user->id,
+            'chat_id' => '112288',
+            'status' => 'active',
+            'verified_at' => now(),
+        ]);
+
+        $mockBot = Mockery::mock(TelegramBotService::class);
+        $mockBot->shouldReceive('sendChatAction')->zeroOrMoreTimes()->andReturn(['ok' => true]);
+        // Only ONE message should ever be sent, despite 2 incoming duplicate webhook calls
+        $mockBot->shouldReceive('sendMessage')->once()->andReturn(['ok' => true]);
+        $this->app->instance(TelegramBotService::class, $mockBot);
+
+        // Attempt 1
+        $res1 = $this->postJson(route('telegram.webhook'), [
+            'update_id' => 500,
+            'message' => [
+                'message_id' => 51,
+                'from' => ['id' => 112288],
+                'chat' => ['id' => 112288],
+                'text' => 'Good night',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc']);
+        $res1->assertStatus(200);
+
+        // Attempt 2 (Duplicate retry from Telegram)
+        $res2 = $this->postJson(route('telegram.webhook'), [
+            'update_id' => 500,
+            'message' => [
+                'message_id' => 51,
+                'from' => ['id' => 112288],
+                'chat' => ['id' => 112288],
+                'text' => 'Good night',
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => 'test_secret_token_abc']);
+        $res2->assertStatus(200);
+    }
 }
+
+

@@ -29,8 +29,8 @@ class NvidiaNimService implements AiServiceInterface
         $this->apiKey = (string) ($apiKey ?? SystemSetting::get('ai_nvidia_api_key', config('nvidia.api_key', '')));
         $this->baseUrl = rtrim((string) config('nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
         $this->model = (string) ($model ?? SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'meta/llama-3.2-11b-vision-instruct')));
-        $this->timeout = (int) config('nvidia.timeout', 20);
-        $this->maxRetries = (int) config('nvidia.max_retries', 1);
+        $this->timeout = min(8, (int) config('nvidia.timeout', 8));
+        $this->maxRetries = (int) config('nvidia.max_retries', 0);
     }
 
     /**
@@ -174,22 +174,25 @@ class NvidiaNimService implements AiServiceInterface
 
             $sleepMs = app()->environment('testing') ? 0 : 250;
 
-            $response = Http::withHeaders([
+            $client = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
             ])
             ->timeout($this->timeout)
-            ->connectTimeout(10)
-            ->retry($this->maxRetries, $sleepMs, function (Throwable $exception, $request) {
-                // Only retry transient failures: rate limits (429), server errors (503, 504), connection timeouts
-                if ($exception instanceof RequestException) {
-                    $status = $exception->response?->status();
-                    return in_array($status, [429, 502, 503, 504]);
-                }
-                return $exception instanceof ConnectionException;
-            })
-            ->post("{$this->baseUrl}/chat/completions", $payload);
+            ->connectTimeout(3);
+
+            if ($this->maxRetries > 0) {
+                $client = $client->retry($this->maxRetries, $sleepMs, function (Throwable $exception, $request) {
+                    if ($exception instanceof RequestException) {
+                        $status = $exception->response?->status();
+                        return in_array($status, [429, 502, 503, 504]);
+                    }
+                    return false;
+                });
+            }
+
+            $response = $client->post("{$this->baseUrl}/chat/completions", $payload);
 
             if ($response->failed()) {
                 $status = $response->status();
@@ -331,6 +334,12 @@ Date: {$currentDate} | Time: {$currentTime} | Day: {$dayOfWeek} | Timezone: {$us
 
 INTENTS:
 "create_reminder" | "list_reminders" | "reschedule_reminder" | "cancel_reminder" | "complete_reminder" | "retrieve_file" | "general_chat" | "unknown"
+
+INTENT SPECIFICS:
+- "list_reminders": When user asks for reminder list, wants to see reminders, or asks how much time is remaining/left for reminder(s) (e.g. "reminder list", "ar koto somoy baki", "koto time baki ache", "amar reminder gulo dekhao"). If asking about a specific reminder (e.g. "youtube reminder er koto time baki"), put that title in "target_reminder_identifier".
+- "complete_reminder": When user marks a reminder done/finished/completed (e.g. "video upload done", "reminder complete", "কাজ শেষ করেছি"). Put title in "target_reminder_identifier".
+- "cancel_reminder": When user asks to cancel or delete a reminder.
+- "reschedule_reminder": When user asks to postpone or change reminder date/time.
 
 DATE RULES:
 "today"/"ajke" -> {$currentDate}

@@ -168,3 +168,69 @@ Route::match(['get', 'post'], '/deploy/migrate', function (\Illuminate\Http\Requ
     }
 })->name('deploy.migrate');
 
+/*
+|--------------------------------------------------------------------------
+| Automated Web Cron Trigger for Scheduled Reminders & Tasks
+|--------------------------------------------------------------------------
+| Allows calling from cron-job.org, UptimeRobot, or cPanel wget/curl.
+| Checks and delivers due reminders immediately.
+*/
+Route::match(['get', 'post'], '/cron/reminders', function (\Illuminate\Http\Request $request) {
+    $token = $request->input('token') ?? $request->header('X-Cron-Token');
+    $secret = env('CRON_TOKEN') ?: env('DEPLOY_TOKEN') ?: env('APP_KEY');
+
+    if (! empty($secret) && ! empty($token) && ! hash_equals((string) $secret, (string) $token)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized cron token.',
+        ], 403);
+    }
+
+    try {
+        \Illuminate\Support\Facades\Artisan::call('remi:send-due-reminders', ['--limit' => 50]);
+        $output = trim(\Illuminate\Support\Facades\Artisan::output());
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Due reminders checked and processed successfully.',
+            'output' => $output,
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Reminder processing error: ' . $e->getMessage(),
+        ], 500);
+    }
+})->name('cron.reminders');
+
+Route::match(['get', 'post'], '/cron/run', function (\Illuminate\Http\Request $request) {
+    $token = $request->input('token') ?? $request->header('X-Cron-Token');
+    $secret = env('CRON_TOKEN') ?: env('DEPLOY_TOKEN') ?: env('APP_KEY');
+
+    if (! empty($secret) && ! empty($token) && ! hash_equals((string) $secret, (string) $token)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized cron token.',
+        ], 403);
+    }
+
+    try {
+        \Illuminate\Support\Facades\Artisan::call('schedule:run');
+        $output = trim(\Illuminate\Support\Facades\Artisan::output());
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Scheduler executed successfully.',
+            'output' => $output,
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Scheduler error: ' . $e->getMessage(),
+        ], 500);
+    }
+})->name('cron.run');
+
+

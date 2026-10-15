@@ -51,7 +51,7 @@ class SendScheduledReminders extends Command
 
         // 2. Fetch due scheduled reminders
         $nowUtc = Carbon::now('UTC');
-        $dueReminders = Reminder::with(['user.whatsappIdentities'])
+        $dueReminders = Reminder::with(['user.whatsappIdentities', 'user.telegramIdentities'])
             ->where('status', Reminder::STATUS_SCHEDULED)
             ->where('due_at', '<=', $nowUtc)
             ->orderBy('due_at', 'asc')
@@ -114,23 +114,33 @@ class SendScheduledReminders extends Command
         $userTz = $user->timezone ?? 'Asia/Dhaka';
         $localTime = $reminder->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
 
+        $telegramDelivered = false;
         // Deliver via Telegram if active
         if ($telegramIdentity && $telegramIdentity->isActive() && in_array($user->preferred_channel ?? 'all', ['telegram', 'all'])) {
             $telegramText = "🔔 <b>REMINDER ALERT</b>\n\n<b>{$reminder->title}</b>\nScheduled: {$localTime} ({$userTz})";
             if (! empty($reminder->description)) {
                 $telegramText .= "\n\n<i>Notes: {$reminder->description}</i>";
             }
-            $this->telegramService->sendMessage($telegramIdentity->chat_id, $telegramText);
-            $this->info("Delivered reminder #{$reminder->id} via Telegram chat #{$telegramIdentity->chat_id}");
+            try {
+                $this->telegramService->sendMessage($telegramIdentity->chat_id, $telegramText);
+                $this->info("Delivered reminder #{$reminder->id} via Telegram chat #{$telegramIdentity->chat_id}");
+                $telegramDelivered = true;
+            } catch (\Throwable $e) {
+                Log::error("Failed to send Telegram reminder #{$reminder->id}: " . $e->getMessage());
+            }
         }
 
-        if (! $identity || ! $identity->isActive()) {
-            // Delivery completed via Telegram
-            if ($reminder->recurrence === Reminder::RECURRENCE_NONE) {
-                $reminder->markAsCompleted();
-            } else {
-                $nextDue = $this->calculateNextOccurrence($reminder->due_at, $reminder->recurrence);
-                $reminder->update(['due_at' => $nextDue]);
+        $shouldSendWhatsApp = $identity && $identity->isActive() && $this->apiService->isConfigured() && in_array($user->preferred_channel ?? 'all', ['whatsapp', 'all']);
+
+        if (! $shouldSendWhatsApp) {
+            if ($telegramDelivered) {
+                // Delivery completed via Telegram
+                if ($reminder->recurrence === Reminder::RECURRENCE_NONE) {
+                    $reminder->markAsCompleted();
+                } else {
+                    $nextDue = $this->calculateNextOccurrence($reminder->due_at, $reminder->recurrence);
+                    $reminder->update(['due_at' => $nextDue]);
+                }
             }
             return;
         }
@@ -259,17 +269,28 @@ class SendScheduledReminders extends Command
 
             Log::error("Failed to deliver reminder #{$reminder->id} to {$identity->phone_number}: [{$errorCode}] {$errorMessage}");
 
-            AuditLog::record(
-                'reminder.delivery_failed',
-                $reminder,
-                "Delivery attempt #{$attempt->attempt_number} failed: {$errorMessage}",
-                [
-                    'error_code' => $errorCode,
-                    'phone_number' => $identity->phone_number,
-                    'is_exhausted' => $isExhausted,
-                ],
-                $user->id
-            );
+            if ($telegramDelivered) {
+                // Since Telegram already successfully delivered, mark the reminder as completed / rolled
+                if ($reminder->recurrence === Reminder::RECURRENCE_NONE) {
+                    $reminder->markAsCompleted();
+                } else {
+                    $nextDue = $this->calculateNextOccurrence($reminder->due_at, $reminder->recurrence);
+                    $reminder->update(['due_at' => $nextDue]);
+                }
+                $this->info("Reminder #{$reminder->id} marked completed via Telegram delivery despite WhatsApp send failure.");
+            } else {
+                AuditLog::record(
+                    'reminder.delivery_failed',
+                    $reminder,
+                    "Delivery attempt #{$attempt->attempt_number} failed: {$errorMessage}",
+                    [
+                        'error_code' => $errorCode,
+                        'phone_number' => $identity->phone_number,
+                        'is_exhausted' => $isExhausted,
+                    ],
+                    $user->id
+                );
+            }
         }
     }
 

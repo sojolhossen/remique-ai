@@ -378,10 +378,11 @@ class WhatsAppMessageProcessor
 
             $recurrenceText = $reminder->recurrence !== 'none' ? " (Repeats: {$reminder->recurrence})" : '';
             $formattedTime = $localDateTime->format('M d, Y h:i A');
+            $remaining = $reminder->getTimeRemainingFormatted('english', $userTz);
 
             $this->apiService->sendText(
                 $identity->phone_number,
-                "✅ Reminder set!\n\n📌 Title: {$reminder->title}\n⏰ When: {$formattedTime} ({$userTz}){$recurrenceText}"
+                "✅ Reminder set!\n\n📌 Title: {$reminder->title}\n⏰ When: {$formattedTime} ({$userTz}){$recurrenceText}\n⏳ Remaining: {$remaining}"
             );
         } catch (\Throwable $e) {
             Log::error('Failed to create reminder via WhatsApp: ' . $e->getMessage());
@@ -395,7 +396,7 @@ class WhatsAppMessageProcessor
         $reminders = Reminder::forUser($identity->user_id)
             ->scheduled()
             ->orderBy('due_at')
-            ->limit(5)
+            ->limit(10)
             ->get();
 
         if ($reminders->isEmpty()) {
@@ -408,7 +409,8 @@ class WhatsAppMessageProcessor
             $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
             $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
             $num = $idx + 1;
-            $list .= "{$num}. {$rem->title}\n   ⏰ {$localTime}{$rec}\n";
+            $remaining = $rem->getTimeRemainingFormatted('english', $userTz);
+            $list .= "{$num}. {$rem->title}\n   ⏰ {$localTime}{$rec}\n   ⏳ Remaining: {$remaining}\n\n";
         }
 
         $this->apiService->sendText($identity->phone_number, trim($list));

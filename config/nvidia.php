@@ -16,7 +16,7 @@ return [
 
     'model' => env('NVIDIA_NIM_MODEL', 'meta/llama-3.2-11b-vision-instruct'),
 
-    'timeout' => (int) env('NVIDIA_NIM_TIMEOUT', 20),
+    'timeout' => (int) env('NVIDIA_NIM_TIMEOUT', 8),
 
-    'max_retries' => (int) env('NVIDIA_NIM_MAX_RETRIES', 1),
+    'max_retries' => (int) env('NVIDIA_NIM_MAX_RETRIES', 0),
 ];

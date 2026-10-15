@@ -366,6 +366,78 @@ class TelegramMessageProcessor
             }
         }
 
+        // D. Quick command: Reminder list (/reminders, /list, "reminder list", "reminders", "রিমাইন্ডার দেখাও", "রিমাইন্ডার লিস্ট", "কত সময় বাকি", "koto somoy baki")
+        if (preg_match('/^(\/reminders|\/list|reminders|reminder list|my reminders|রিমাইন্ডার|রিমাইন্ডার দেখাও|রিমাইন্ডার লিস্ট|রিমাইন্ডার গুলো দেখাও|কত সময় বাকি|কত সময় বাকি আছে|koto somoy baki|koto time baki)$/iu', $trimmedText)) {
+            $reminders = Reminder::forUser($user->id)
+                ->scheduled()
+                ->orderBy('due_at')
+                ->limit(10)
+                ->get();
+
+            $lang = $this->resolveLanguage($trimmedText, null);
+
+            if ($reminders->isEmpty()) {
+                $emptyReply = match ($lang) {
+                    'bengali' => "📋 আপনার এই মুহূর্তে কোনো পেন্ডিং রিমাইন্ডার শিডিউল করা নেই।",
+                    'banglish' => "📋 Apnar ei muhurte kono pending reminder schedule kora nei.",
+                    default => "📋 You do not have any pending reminders scheduled at this moment.",
+                };
+                $this->sendReply($identity, $chatId, $emptyReply);
+                return;
+            }
+
+            $header = match ($lang) {
+                'bengali' => "📋 <b>আপনার আসন্ন রিমাইন্ডারসমূহ:</b>\n\n",
+                'banglish' => "📋 <b>Apnar pending reminder list:</b>\n\n",
+                default => "📋 <b>Your upcoming reminders:</b>\n\n",
+            };
+
+            $list = $header;
+            foreach ($reminders as $idx => $rem) {
+                $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
+                $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
+                $num = $idx + 1;
+                $remLabel = match ($lang) {
+                    'bengali' => 'বাকি আছে:',
+                    'banglish' => 'Baki ache:',
+                    default => 'Remaining:',
+                };
+                $timeLeft = $rem->getTimeRemainingFormatted($lang, $userTz);
+                $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n   ⏳ <b>{$remLabel}</b> {$timeLeft}\n\n";
+            }
+
+            $this->sendReply($identity, $chatId, trim($list));
+            return;
+        }
+
+        // E. Quick command: Common short acknowledgments & night greetings (0s latency, no AI needed)
+        if (preg_match('/^(ok|okay|k|thik ache|theek ache|accha|acha|humm|hmm|ha|haa|ji|হুম|আচ্ছা|ঠিক আছে|ধন্যবাদ|thanks|thank you|ty|shuvo ratri|shubho ratri|শুভ রাত্রি|good night|gn|bye|বিদায়)$/iu', $trimmedText)) {
+            $lang = $this->resolveLanguage($trimmedText, null);
+            $isNight = preg_match('/(shuvo ratri|shubho ratri|শুভ রাত্রি|good night|gn)/iu', $trimmedText);
+
+            if ($isNight) {
+                $reply = match ($lang) {
+                    'bengali' => "🌙 <b>শুভ রাত্রি!</b> নিশ্চিন্তে ঘুমান, আপনার রিমাইন্ডারের খেয়াল আমি রাখব।",
+                    'banglish' => "🌙 <b>Shuvo ratri!</b> Shanti te ghuman, apnar reminder er kheyal ami rakhbo.",
+                    default => "🌙 <b>Good night!</b> Sleep well, Remi has your schedule covered.",
+                };
+            } elseif (preg_match('/(ধন্যবাদ|thanks|thank you|ty)/iu', $trimmedText)) {
+                $reply = match ($lang) {
+                    'bengali' => "আপনাকেও অনেক ধন্যবাদ! আপনার কোনো রিমাইন্ডার প্রয়োজন হলে যেকোনো সময় বলবেন।",
+                    'banglish' => "Apnakeo dhonnobad! Kono reminder ba help lagle bolben.",
+                    default => "You're welcome! Let me know if you need any reminders.",
+                };
+            } else {
+                $reply = match ($lang) {
+                    'bengali' => "ঠিক আছে! আপনার কোনো রিমাইন্ডার বা সহায়তা প্রয়োজন হলে যেকোনো সময় জানাবেন।",
+                    'banglish' => "Thik ache! Kono reminder lagle bolben.",
+                    default => "Sure thing! Let me know if you need anything else.",
+                };
+            }
+            $this->sendReply($identity, $chatId, $reply);
+            return;
+        }
+
         // 2. Enrich recently uploaded file if user provides description in follow-up message
         if (preg_match('/(ছবি|ফাইল|ডকুমেন্ট|রশিদ|নাম|photo|image|doc|slip|receipt|রেখে দাও|সেভ করো|মিষ্টি|বিড়াল)/iu', $text)) {
             $recentFile = VaultFile::forUser($user->id)
@@ -402,9 +474,35 @@ class TelegramMessageProcessor
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
-            $errorMessage = $interpretation->errorMessage
-                ?: "AI সার্ভিস এই মুহূর্তে রেসপন্স করছে না। দয়া করে আপনার .env ফাইলে NVIDIA_NIM_API_KEY কনফিগার করা আছে কি না যাচাই করুন।";
-            $this->sendReply($identity, $chatId, "⚠️ " . $errorMessage);
+            $lang = $this->resolveLanguage($text, null);
+
+            // Throttle error notifications to prevent spamming user multiple times
+            $throttleKey = "tg_err_throttle_{$identity->id}";
+            if (\Illuminate\Support\Facades\Cache::has($throttleKey)) {
+                Log::warning("Throttled duplicate AI error message for user {$user->id}");
+                return;
+            }
+            \Illuminate\Support\Facades\Cache::put($throttleKey, true, now()->addMinutes(2));
+
+            // If the user's message was short or conversational, reply gracefully without technical errors
+            if (mb_strlen($trimmedText) <= 20 && ! preg_match('/\d|কাল|আজ|সকাল|রাত|tay|shokal|rat|meeting|remind/iu', $trimmedText)) {
+                $politeReply = match ($lang) {
+                    'bengali' => 'আমি আপনার বার্তাটি পেয়েছি! কোনো রিমাইন্ডার সেট বা দেখতে চাইলে সময়সহ বলুন (যেমন: "কাল সকাল ৯টায় মিটিং")।',
+                    'banglish' => 'Ami apnar message peyechi! Kono reminder set korte chaile shomoy shoho bolun (e.g. "Kal shokal 9 tay meeting").',
+                    default => 'Message received! If you would like to set or check reminders, please let me know.',
+                };
+                $this->sendReply($identity, $chatId, $politeReply);
+                return;
+            }
+
+            // User likely intended to set or manage a reminder
+            $userFriendlyError = match ($lang) {
+                'bengali' => "⚠️ এআই সার্ভারে সংযোগে সামান্য বিলম্ব হচ্ছে। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন (যেমন: 'কাল সকাল ৯টায় মিটিং')।",
+                'banglish' => "⚠️ AI service e samanno deri hochhe. Please ektu por abar bolun (e.g. 'Kal shokal 9 tay meeting').",
+                default => "⚠️ AI service is experiencing a brief delay. Please try again shortly.",
+            };
+
+            $this->sendReply($identity, $chatId, $userFriendlyError);
             return;
         }
 
@@ -471,11 +569,16 @@ class TelegramMessageProcessor
 
         // 5. Intent: List reminders
         if ($interpretation->intent === 'list_reminders') {
-            $reminders = Reminder::forUser($user->id)
-                ->scheduled()
-                ->orderBy('due_at')
-                ->limit(5)
-                ->get();
+            $qb = Reminder::forUser($user->id)->scheduled();
+            if (! empty($interpretation->targetReminderIdentifier)) {
+                $qb->where('title', 'like', "%{$interpretation->targetReminderIdentifier}%");
+            }
+            $reminders = $qb->orderBy('due_at')->limit(10)->get();
+
+            // If queried for a specific title but not found, fallback to all upcoming
+            if ($reminders->isEmpty() && ! empty($interpretation->targetReminderIdentifier)) {
+                $reminders = Reminder::forUser($user->id)->scheduled()->orderBy('due_at')->limit(5)->get();
+            }
 
             if ($reminders->isEmpty()) {
                 $emptyReply = match ($lang) {
@@ -498,14 +601,84 @@ class TelegramMessageProcessor
                 $localTime = $rem->due_at->copy()->setTimezone($userTz)->format('M d, Y h:i A');
                 $rec = $rem->recurrence !== 'none' ? " [{$rem->recurrence}]" : '';
                 $num = $idx + 1;
-                $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n\n";
+                $remLabel = match ($lang) {
+                    'bengali' => 'বাকি আছে:',
+                    'banglish' => 'Baki ache:',
+                    default => 'Remaining:',
+                };
+                $timeLeft = $rem->getTimeRemainingFormatted($lang, $userTz);
+                $list .= "<b>{$num}. {$rem->title}</b>\n   ⏰ {$localTime}{$rec}\n   ⏳ <b>{$remLabel}</b> {$timeLeft}\n\n";
             }
 
             $this->sendReply($identity, $chatId, trim($list));
             return;
         }
 
-        // 6. Intent: Cancel reminder
+        // 6. Intent: Complete reminder
+        if ($interpretation->intent === 'complete_reminder') {
+            $identifier = $interpretation->targetReminderIdentifier ?? $interpretation->title;
+            $qb = Reminder::forUser($user->id)->scheduled();
+            if ($identifier) {
+                $qb->where('title', 'like', "%{$identifier}%");
+            }
+            $reminder = $qb->latest('due_at')->first();
+            if ($reminder) {
+                $reminder->markAsCompleted();
+                $defaultReply = match ($lang) {
+                    'bengali' => "✅ '<b>{$reminder->title}</b>' রিমাইন্ডারটি সম্পন্ন হিসেবে চিহ্নিত করা হলো!",
+                    'banglish' => "✅ '<b>{$reminder->title}</b>' reminder ti complete hishebe mark kora hoyeche!",
+                    default => "✅ Reminder '<b>{$reminder->title}</b>' marked as completed!",
+                };
+                $reply = $interpretation->conversationalReply ?: $defaultReply;
+                $this->sendReply($identity, $chatId, $reply);
+            } else {
+                $notFound = match ($lang) {
+                    'bengali' => "সম্পন্ন করার মতো কোনো সক্রিয় রিমাইন্ডার পাওয়া যায়নি।",
+                    'banglish' => "Complete korar moto kono active reminder pawa jayni.",
+                    default => "No matching active reminder found to mark as completed.",
+                };
+                $this->sendReply($identity, $chatId, $interpretation->conversationalReply ?: $notFound);
+            }
+            return;
+        }
+
+        // 7. Intent: Reschedule reminder
+        if ($interpretation->intent === 'reschedule_reminder') {
+            $identifier = $interpretation->targetReminderIdentifier ?? $interpretation->title;
+            $qb = Reminder::forUser($user->id)->scheduled();
+            if ($identifier) {
+                $qb->where('title', 'like', "%{$identifier}%");
+            }
+            $reminder = $qb->latest('due_at')->first();
+            if ($reminder) {
+                $currentLocal = $reminder->due_at->copy()->setTimezone($userTz);
+                $newDate = $interpretation->date ?? $currentLocal->toDateString();
+                $newTime = $interpretation->time ?? $currentLocal->toTimeString();
+                $newDueAt = Carbon::parse("{$newDate} {$newTime}", $userTz)->setTimezone('UTC');
+                $reminder->due_at = $newDueAt;
+                $reminder->save();
+
+                $formatted = Carbon::parse("{$newDate} {$newTime}", $userTz)->format('M d, Y h:i A');
+                $newRemaining = $reminder->getTimeRemainingFormatted($lang, $userTz);
+
+                $msg = match ($lang) {
+                    'bengali' => "🕒 '<b>{$reminder->title}</b>' রিমাইন্ডারটি নতুন সময়ে শিডিউল করা হয়েছে:\n⏰ <b>নতুন সময়:</b> {$formatted} ({$userTz})\n⏳ <b>বাকি আছে:</b> {$newRemaining}",
+                    'banglish' => "🕒 '<b>{$reminder->title}</b>' reminder ti reschedule kora hoyeche:\n⏰ <b>New time:</b> {$formatted} ({$userTz})\n⏳ <b>Baki ache:</b> {$newRemaining}",
+                    default => "🕒 Rescheduled '<b>{$reminder->title}</b>':\n⏰ <b>New time:</b> {$formatted} ({$userTz})\n⏳ <b>Remaining:</b> {$newRemaining}",
+                };
+                $this->sendReply($identity, $chatId, $msg);
+            } else {
+                $notFound = match ($lang) {
+                    'bengali' => "রিস্কেডিউল করার মতো কোনো রিমাইন্ডার পাওয়া যায়নি।",
+                    'banglish' => "Reschedule korar moto kono reminder pawa jayni.",
+                    default => "Could not find the reminder you want to reschedule.",
+                };
+                $this->sendReply($identity, $chatId, $interpretation->conversationalReply ?: $notFound);
+            }
+            return;
+        }
+
+        // 8. Intent: Cancel reminder
         if ($interpretation->intent === 'cancel_reminder') {
             $identifier = $interpretation->targetReminderIdentifier ?? $interpretation->title;
             $qb = Reminder::forUser($user->id)->scheduled();
@@ -534,7 +707,7 @@ class TelegramMessageProcessor
             return;
         }
 
-        // 7. Intent: Create reminder
+        // 9. Intent: Create reminder
         if ($interpretation->intent === 'create_reminder' && ! $interpretation->hasMissingInfo) {
             $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
             $time = $interpretation->time ?? '09:00:00';
@@ -552,12 +725,14 @@ class TelegramMessageProcessor
             ]);
 
             $formattedTime = $dueAtInUserTz->format('M d, Y h:i A');
+            $timeRemaining = $reminder->getTimeRemainingFormatted($lang, $userTz);
             $aiReply = $interpretation->conversationalReply;
 
             if ($lang === 'bengali') {
                 $header = "🔔 <b>রিমাইন্ডার শিডিউল করা হয়েছে!</b>";
                 $titleLabel = "বিষয়:";
                 $timeLabel = "সময়:";
+                $remLabel = "বাকি আছে:";
                 $recLabel = "পুনরাবৃত্তি:";
                 $recValue = match ($reminder->recurrence) {
                     'daily' => 'প্রতিদিন',
@@ -570,6 +745,7 @@ class TelegramMessageProcessor
                 $header = "🔔 <b>Reminder Set Kora Hoyeche!</b>";
                 $titleLabel = "Title:";
                 $timeLabel = "Shomoy:";
+                $remLabel = "Baki ache:";
                 $recLabel = "Recurrence:";
                 $recValue = match ($reminder->recurrence) {
                     'daily' => 'Protidin',
@@ -582,6 +758,7 @@ class TelegramMessageProcessor
                 $header = "🔔 <b>Reminder Scheduled!</b>";
                 $titleLabel = "Title:";
                 $timeLabel = "Due:";
+                $remLabel = "Time remaining:";
                 $recLabel = "Recurrence:";
                 $recValue = ucfirst($reminder->recurrence);
             }
@@ -590,6 +767,7 @@ class TelegramMessageProcessor
                      ($aiReply ? "{$aiReply}\n\n" : '') .
                      "📌 <b>{$titleLabel}</b> {$reminder->title}\n" .
                      "⏰ <b>{$timeLabel}</b> {$formattedTime} ({$userTz})\n" .
+                     "⏳ <b>{$remLabel}</b> {$timeRemaining}\n" .
                      "🔁 <b>{$recLabel}</b> {$recValue}";
 
             $this->sendReply($identity, $chatId, $reply);
