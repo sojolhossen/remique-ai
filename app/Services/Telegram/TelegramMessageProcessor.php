@@ -474,6 +474,31 @@ class TelegramMessageProcessor
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
+            $localFallback = \App\Services\AI\LocalReminderParser::parse($text, $userTz);
+            if ($localFallback) {
+                $interpretation = new \App\Services\AI\ReminderInterpretationResult(
+                    success: true,
+                    intent: $localFallback['intent'],
+                    title: $localFallback['title'],
+                    description: $localFallback['description'],
+                    date: $localFallback['date'],
+                    time: $localFallback['time'],
+                    priority: $localFallback['priority'],
+                    recurrence: $localFallback['recurrence'],
+                    detectedLanguage: $localFallback['detected_language'],
+                    hasMissingInfo: $localFallback['has_missing_info'],
+                    missingFields: $localFallback['missing_fields'],
+                    clarificationQuestion: null,
+                    confidence: $localFallback['confidence'],
+                    errorMessage: null,
+                    errorCategory: null,
+                    durationMs: 0,
+                    conversationalReply: $localFallback['conversational_reply']
+                );
+            }
+        }
+
+        if (! $interpretation->success) {
             $lang = $this->resolveLanguage($text, null);
 
             // Throttle error notifications to prevent spamming user multiple times
@@ -712,11 +737,27 @@ class TelegramMessageProcessor
             $date = $interpretation->date ?? Carbon::now($userTz)->toDateString();
             $time = $interpretation->time ?? '09:00:00';
             $dueAtInUserTz = Carbon::parse("{$date} {$time}", $userTz);
+
+            // If user did not specify explicit date and time is past today, advance to tomorrow
+            if (empty($interpretation->date) && $dueAtInUserTz->isPast()) {
+                $dueAtInUserTz->addDay();
+            }
+
             $dueAtUtc = $dueAtInUserTz->copy()->setTimezone('UTC');
+
+            $rawTitle = $interpretation->title;
+            if (empty($rawTitle) || in_array(mb_strtolower(trim($rawTitle)), ['ঠিক আছে', 'thik ache', 'ok', 'okay', 'reminder', 'রিমাইন্ডার'])) {
+                $parsedLocal = \App\Services\AI\LocalReminderParser::parse($text, $userTz);
+                if (! empty($parsedLocal['title']) && ! in_array(mb_strtolower(trim($parsedLocal['title'])), ['ঠিক আছে', 'thik ache', 'ok', 'okay', 'reminder', 'রিমাইন্ডার'])) {
+                    $rawTitle = $parsedLocal['title'];
+                } else {
+                    $rawTitle = ($lang === 'bengali' || $lang === 'banglish') ? 'রিমাইন্ডার' : 'Reminder';
+                }
+            }
 
             $reminder = Reminder::create([
                 'user_id' => $user->id,
-                'title' => $interpretation->title ?? 'Reminder',
+                'title' => $rawTitle,
                 'description' => $interpretation->description,
                 'due_at' => $dueAtUtc,
                 'status' => 'scheduled',

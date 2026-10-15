@@ -304,6 +304,31 @@ class WhatsAppMessageProcessor
         $interpretation = $this->aiService->parseReminderPrompt($text, $userTz, $user->id, $history);
 
         if (! $interpretation->success) {
+            $localFallback = \App\Services\AI\LocalReminderParser::parse($text, $userTz);
+            if ($localFallback) {
+                $interpretation = new \App\Services\AI\ReminderInterpretationResult(
+                    success: true,
+                    intent: $localFallback['intent'],
+                    title: $localFallback['title'],
+                    description: $localFallback['description'],
+                    date: $localFallback['date'],
+                    time: $localFallback['time'],
+                    priority: $localFallback['priority'],
+                    recurrence: $localFallback['recurrence'],
+                    detectedLanguage: $localFallback['detected_language'],
+                    hasMissingInfo: $localFallback['has_missing_info'],
+                    missingFields: $localFallback['missing_fields'],
+                    clarificationQuestion: null,
+                    confidence: $localFallback['confidence'],
+                    errorMessage: null,
+                    errorCategory: null,
+                    durationMs: 0,
+                    conversationalReply: $localFallback['conversational_reply']
+                );
+            }
+        }
+
+        if (! $interpretation->success) {
             $this->apiService->sendText(
                 $identity->phone_number,
                 "I couldn't process your request: " . ($interpretation->errorMessage ?? 'Please try again.')

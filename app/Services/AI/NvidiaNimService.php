@@ -29,8 +29,8 @@ class NvidiaNimService implements AiServiceInterface
         $this->apiKey = (string) ($apiKey ?? SystemSetting::get('ai_nvidia_api_key', config('nvidia.api_key', '')));
         $this->baseUrl = rtrim((string) config('nvidia.base_url', 'https://integrate.api.nvidia.com/v1'), '/');
         $this->model = (string) ($model ?? SystemSetting::get('ai_nvidia_model', config('nvidia.model', 'meta/llama-3.2-11b-vision-instruct')));
-        $this->timeout = min(8, (int) config('nvidia.timeout', 8));
-        $this->maxRetries = (int) config('nvidia.max_retries', 0);
+        $this->timeout = min(12, max(5, (int) config('nvidia.timeout', 12)));
+        $this->maxRetries = max(0, (int) config('nvidia.max_retries', 0));
     }
 
     /**
@@ -128,6 +128,7 @@ class NvidiaNimService implements AiServiceInterface
     public function parseReminderPrompt(string $userInput, string $userTimezone = 'UTC', ?int $userId = null, array $conversationHistory = []): ReminderInterpretationResult
     {
         $startTime = hrtime(true);
+        $nowInUserTz = Carbon::now($userTimezone);
 
         if (! $this->isConfigured()) {
             return $this->buildFailureResult(
@@ -138,7 +139,6 @@ class NvidiaNimService implements AiServiceInterface
             );
         }
 
-        $nowInUserTz = Carbon::now($userTimezone);
         $systemPrompt = $this->buildSystemPrompt($nowInUserTz, $userTimezone);
 
         try {
@@ -166,9 +166,9 @@ class NvidiaNimService implements AiServiceInterface
             $payload = [
                 'model' => $this->model,
                 'messages' => $messages,
-                'temperature' => 0.1,
+                'temperature' => 0.2,
                 'top_p' => 0.9,
-                'max_tokens' => 350,
+                'max_tokens' => 220,
                 'stream' => false,
             ];
 
@@ -227,7 +227,7 @@ class NvidiaNimService implements AiServiceInterface
                 );
             }
 
-            $parsedData = $this->extractAndValidateJson($content);
+            $parsedData = $this->extractAndValidateJson($content, $nowInUserTz);
             if (! $parsedData) {
                 return $this->buildFailureResult(
                     'Unable to parse structured reminder from AI output. Please use manual reminder creation.',
@@ -326,61 +326,49 @@ class NvidiaNimService implements AiServiceInterface
         $dayOfWeek = $nowInUserTz->format('l');
 
         return <<<PROMPT
-You are Remi AI, the intelligent conversational assistant for Remique.
-Output ONLY a strictly valid JSON object. No preamble, no markdown fences, no internal reasoning.
-
-CONTEXT:
-Date: {$currentDate} | Time: {$currentTime} | Day: {$dayOfWeek} | Timezone: {$userTimezone}
+You are Remi AI, the assistant for Remique. Output ONLY a strictly valid JSON object. No markdown fences, no reasoning.
+Current: {$currentDate} {$currentTime} {$dayOfWeek} ({$userTimezone})
 
 INTENTS:
-"create_reminder" | "list_reminders" | "reschedule_reminder" | "cancel_reminder" | "complete_reminder" | "retrieve_file" | "general_chat" | "unknown"
+- create_reminder: user wants a reminder. Title must concisely summarize the action/task.
+- list_reminders: user asks to see/check reminders or remaining time (e.g. "reminder list", "koto somoy baki", "আমার রিমাইন্ডার").
+- complete_reminder: user finished a task (e.g. "complete", "done", "কাজ শেষ"). Put task name in "target_reminder_identifier".
+- cancel_reminder: user cancels a reminder.
+- reschedule_reminder: user postpones or changes date/time.
+- retrieve_file: user looks for a saved file/photo/doc.
+- general_chat: greeting or general inquiry.
 
-INTENT SPECIFICS:
-- "list_reminders": When user asks for reminder list, wants to see reminders, or asks how much time is remaining/left for reminder(s) (e.g. "reminder list", "ar koto somoy baki", "koto time baki ache", "amar reminder gulo dekhao"). If asking about a specific reminder (e.g. "youtube reminder er koto time baki"), put that title in "target_reminder_identifier".
-- "complete_reminder": When user marks a reminder done/finished/completed (e.g. "video upload done", "reminder complete", "কাজ শেষ করেছি"). Put title in "target_reminder_identifier".
-- "cancel_reminder": When user asks to cancel or delete a reminder.
-- "reschedule_reminder": When user asks to postpone or change reminder date/time.
-
-DATE RULES:
-"today"/"ajke" -> {$currentDate}
-"tomorrow"/"kal" -> resolve +1 day relative to {$currentDate}
-"day after tomorrow"/"porshu" -> resolve +2 days relative to {$currentDate}
-"9 AM"/"সকাল ৯টা" -> "09:00:00" | "8 PM"/"রাত ৮টা" -> "20:00:00"
+RULES:
+- Language: Mirror user language (Bangla -> Bangla script, Banglish -> English letters/Banglish, English -> English).
+- conversational_reply: Keep concise (max 10 words).
+- If time is given without date, assume today (or tomorrow if time already passed).
+- For Bengali numbers: ১=1, ২=2, ৩=3, ৪=4, ৫=5, ৬=6, ৭=7, ৮=8, ৯=9, ০=0. "৮:৪০" -> "08:40:00".
 
 JSON SCHEMA:
 {
-  "intent": "create_reminder"|"list_reminders"|"reschedule_reminder"|"cancel_reminder"|"complete_reminder"|"retrieve_file"|"general_chat"|"unknown",
-  "conversational_reply": "Warm, natural response matching user's language and script.",
-  "title": "Concise reminder title or null",
+  "intent": "create_reminder",
+  "conversational_reply": "সংক্ষিপ্ত উত্তর",
+  "title": "Concise title",
   "description": null,
-  "date": "YYYY-MM-DD"|null,
-  "time": "HH:MM:SS"|null,
-  "priority": "low"|"medium"|"high"|"urgent",
-  "recurrence": "none"|"daily"|"weekly"|"monthly"|"yearly",
-  "search_query": "file keyword to search or null",
-  "file_type": "image"|"pdf"|"document"|null,
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM:SS",
+  "priority": "medium",
+  "recurrence": "none",
   "target_reminder_identifier": null,
-  "detected_language": "bengali"|"banglish"|"english",
+  "search_query": null,
+  "file_type": null,
+  "detected_language": "bengali",
   "has_missing_info": false,
   "missing_fields": [],
-  "clarification_question": null,
   "confidence": 0.95
 }
-
-MANDATORY LANGUAGE & SCRIPT MIRRORING:
-1. BANGLA: User writes in Bengali script (e.g. কেমন আছো, রিমাইন্ডার দাও) -> reply strictly in Bengali script.
-2. BANGLISH: User writes in Banglish / Latin script (e.g. kemon aso, ki khobor, kal reminder dio) -> reply strictly in Banglish (English letters). NEVER reply in Bengali script when user writes in Banglish!
-3. ENGLISH: User writes in English -> reply in English.
-
-MULTI-TURN MEMORY:
-Use recent messages in history to remember names, context, and follow-ups.
 PROMPT;
     }
 
     /**
      * Clean and parse JSON from LLM output.
      */
-    protected function extractAndValidateJson(string $rawContent): ?array
+    protected function extractAndValidateJson(string $rawContent, ?Carbon $nowInUserTz = null): ?array
     {
         $clean = trim($rawContent);
 
@@ -406,10 +394,12 @@ PROMPT;
             return null;
         }
 
-        // For create_reminder, if title is missing, assign a sensible default title
-        if ($decoded['intent'] === 'create_reminder' && empty($decoded['title'])) {
+        // For create_reminder, if title is missing or a generic filler, assign a sensible default title
+        if ($decoded['intent'] === 'create_reminder') {
             $lang = $decoded['detected_language'] ?? 'bengali';
-            $decoded['title'] = ($lang === 'bengali' || $lang === 'banglish') ? 'রিমাইন্ডার' : 'Reminder';
+            if (empty($decoded['title']) || in_array(mb_strtolower(trim($decoded['title'])), ['ঠিক আছে', 'thik ache', 'ok', 'okay', 'reminder'])) {
+                $decoded['title'] = ($lang === 'bengali' || $lang === 'banglish') ? 'রিমাইন্ডার' : 'Reminder';
+            }
         }
 
         // Validate date format if provided
@@ -429,6 +419,21 @@ PROMPT;
                 $decoded['missing_fields'][] = 'time';
             } elseif (strlen($decoded['time']) === 5) {
                 $decoded['time'] .= ':00';
+            }
+        }
+
+        // If create_reminder has a valid time but date is missing, infer date based on current time
+        if ($decoded['intent'] === 'create_reminder' && empty($decoded['date']) && ! empty($decoded['time'])) {
+            $ref = $nowInUserTz ?? Carbon::now();
+            $candidate = Carbon::parse("{$ref->toDateString()} {$decoded['time']}", $ref->timezone);
+            if ($candidate->lessThanOrEqualTo($ref)) {
+                $decoded['date'] = $ref->copy()->addDay()->toDateString();
+            } else {
+                $decoded['date'] = $ref->toDateString();
+            }
+            $decoded['has_missing_info'] = false;
+            if (! empty($decoded['missing_fields'])) {
+                $decoded['missing_fields'] = array_values(array_diff($decoded['missing_fields'], ['date']));
             }
         }
 
